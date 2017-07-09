@@ -1,0 +1,14 @@
+[package]
+name = "photos-rs"
+version = "0.1.0"
+authors = ["Eric Trombly <etrombly@yahoo.com>"]
+
+[dependencies]
+rexiv2 = "0.5"
+serde = "0.9"
+serde_json = "0.9"
+serde_derive = "0.9"
+chrono = { version = "0.3", features = ["serde"] }
+
+[dependencies.location_history]
+git = "https://github.com/etrombly/location_history"
