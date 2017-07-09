@@ -11,4 +11,5 @@ serde_derive = "0.9"
 chrono = { version = "0.3", features = ["serde"] }
 
 [dependencies.location_history]
-git = "https://github.com/etrombly/location_history"
+#git = "https://github.com/etrombly/location_history"
+path = "/home/eric/Projects/location_history"

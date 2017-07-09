@@ -38,9 +38,19 @@ fn main() {
         if let Ok(time_str) = meta.get_tag_string(tag){
             if let Ok(time) = NaiveDateTime::parse_from_str(&time_str, "%Y:%m:%d %H:%M:%S"){
                 println!("  Date: {:?}", time);
-                let closest = locations.find_closest(time);
-                println!("  closest timestamp: {:?} lat: {} long: {} accuracy: {}", closest.timestamp, closest.latitude, closest.longitude, closest.accuracy);
-                println!("  actual location: {:?}", gps);
+                if let Some(closest) = locations.find_closest(time){
+                    println!("  closest timestamp: {:?} lat: {} long: {} accuracy: {}", closest.timestamp, closest.latitude, closest.longitude, closest.accuracy);
+                    match gps{
+                        Some(x) => println!("  lat error: {:.1} miles long error: {:.1} miles", 
+                                            (x.latitude - closest.latitude as f64) * 69.0 , 
+                                            (x.longitude - closest.longitude as f64) * 69.0),
+                        _ => {},
+                    }
+                }
+                match gps{
+                    Some(x) => println!("  actual location: {:?}", x),
+                    _ => {},
+                }
             }
         }
         println!("");
