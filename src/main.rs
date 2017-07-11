@@ -37,33 +37,38 @@ impl Photo {
             &None => None,
         };
         let time = match &meta {
-            &Some(ref x) => { 
+            &Some(ref x) => {
                 match x.get_tag_string("Exif.Image.DateTime") {
                     Ok(y) => {
                         match NaiveDateTime::parse_from_str(&y, "%Y:%m:%d %H:%M:%S") {
                             Ok(z) => Some(z),
                             Err(_) => None,
                         }
-                    },
+                    }
                     Err(_) => None,
                 }
-            },   
+            }   
             &None => None,
         };
-        Photo{path, meta, loc, time}
+        Photo {
+            path,
+            meta,
+            loc,
+            time,
+        }
     }
 }
 
 impl cogset::Point for Photo {
     fn dist(&self, other: &Photo) -> f64 {
         // returning MAX isn't really correct, but shouldn't throw off the clustering
-        match self.loc{
+        match self.loc {
             Some(x) => {
                 match other.loc {
                     Some(y) => x.haversine_distance(&y),
                     None => std::f64::MAX,
                 }
-            },
+            }
             None => std::f64::MAX,
         }
     }
@@ -77,16 +82,14 @@ impl<'a> cogset::Point for TimePhoto<'a> {
                     Some(y) => (x.timestamp() - y.timestamp()) as f64,
                     None => std::f64::MAX,
                 }
-            },
+            }
             None => std::f64::MAX,
         }
     }
 }
 fn gps_to_point(gps: Option<rexiv2::GpsInfo>) -> Option<Point<f64>> {
     match gps {
-        Some(x) => {
-            Some(Point::new(x.latitude, x.longitude))
-        },
+        Some(x) => Some(Point::new(x.latitude, x.longitude)),
         None => None,
     }
 }
@@ -99,16 +102,18 @@ fn main() {
         .unwrap();
     let locations: Locations = Locations::new(&contents);
     println!("Loaded  {} timestamps", locations.locations.len());
-    println!("  from {} to {}",
-             locations.locations[locations.locations.len() - 1]
-                 .timestamp
-                 .format("%Y-%m-%d %H:%M:%S"),
-             locations.locations[0]
-                 .timestamp
-                 .format("%Y-%m-%d %H:%M:%S"));
-    println!("  {} seconds average between timestamps\n",
-             locations.average_time());
-    
+    println!(
+        "  from {} to {}",
+        locations.locations[locations.locations.len() - 1]
+            .timestamp
+            .format("%Y-%m-%d %H:%M:%S"),
+        locations.locations[0].timestamp.format("%Y-%m-%d %H:%M:%S")
+    );
+    println!(
+        "  {} seconds average between timestamps\n",
+        locations.average_time()
+    );
+
     println!("Scanning photos");
     let photos = read_directory("/storage/pictures/2017");
     println!("Found {} photos", photos.len());
@@ -117,20 +122,29 @@ fn main() {
         println!("  Name: {}", photo.path.display());
         if let Some(ref meta) = photo.meta {
             println!("  Filetype: {}", meta.get_media_type().unwrap());
-            if let Ok(time_str) = meta.get_tag_string("Exif.Image.DateTime"){
-                if let Ok(time) = NaiveDateTime::parse_from_str(&time_str, "%Y:%m:%d %H:%M:%S"){
+            if let Ok(time_str) = meta.get_tag_string("Exif.Image.DateTime") {
+                if let Ok(time) = NaiveDateTime::parse_from_str(&time_str, "%Y:%m:%d %H:%M:%S") {
                     println!("  Date: {:?}", time);
-                    if let Some(closest) = locations.find_closest(time){
-                        println!("  closest timestamp: {:?} lat: {} long: {} accuracy: {}", closest.timestamp, closest.latitude, closest.longitude, closest.accuracy);
-                        match photo.loc {
-                            Some(x) => println!("  distance error meters: {:.2}", 
-                                                x.haversine_distance(&Point::new(closest.latitude as f64, closest.longitude as f64))),
-                            _ => {},
+                    if let Some(closest) = locations.find_closest(time) {
+                        println!(
+                            "  closest timestamp: {:?} lat: {} long: {} accuracy: {}",
+                            closest.timestamp,
+                            closest.latitude,
+                            closest.longitude,
+                            closest.accuracy
+                        );
+                        if let Some(x) = photo.loc {
+                            println!(
+                                "  distance error meters: {:.2}",
+                                x.haversine_distance(&Point::new(
+                                    closest.latitude as f64,
+                                    closest.longitude as f64,
+                                ))
+                            );
                         }
                     }
-                    match photo.loc {
-                        Some(x) => println!("  actual location: {:?}", x),
-                        _ => {},
+                    if let Some(x) = photo.loc {
+                        println!("  actual location: {:?}", x);
                     }
                 }
             }
@@ -151,7 +165,6 @@ fn main() {
 
 fn read_directory(dir: &str) -> Vec<Photo> {
     let files = WalkDir::new(dir).into_iter().filter_map(|e| e.ok());
-    let files = files.filter(|x| Metadata::new_from_path(x.path())
-                                .is_ok());
+    let files = files.filter(|x| Metadata::new_from_path(x.path()).is_ok());
     files.map(|x| Photo::new(x.path().to_path_buf())).collect()
 }
