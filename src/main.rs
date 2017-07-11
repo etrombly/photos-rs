@@ -19,9 +19,12 @@ use walkdir::WalkDir;
 #[derive(Debug)]
 struct Photo {
     path: PathBuf,
-    loc: Option<Point<f64>>,
     meta: Option<Metadata>,
+    loc: Option<Point<f64>>,
+    time: Option<NaiveDateTime>,
 }
+
+struct TimePhoto<'a>(&'a Photo);
 
 impl Photo {
     pub fn new(path: PathBuf) -> Photo {
@@ -33,7 +36,21 @@ impl Photo {
             &Some(ref x) => gps_to_point(x.get_gps_info()),
             &None => None,
         };
-        Photo{path, loc, meta}
+        let time = match &meta {
+            &Some(ref x) => { 
+                match x.get_tag_string("Exif.Image.DateTime") {
+                    Ok(y) => {
+                        match NaiveDateTime::parse_from_str(&y, "%Y:%m:%d %H:%M:%S") {
+                            Ok(z) => Some(z),
+                            Err(_) => None,
+                        }
+                    },
+                    Err(_) => None,
+                }
+            },   
+            &None => None,
+        };
+        Photo{path, meta, loc, time}
     }
 }
 
@@ -52,6 +69,19 @@ impl cogset::Point for Photo {
     }
 }
 
+impl<'a> cogset::Point for TimePhoto<'a> {
+    fn dist(&self, other: &TimePhoto) -> f64 {
+        match self.0.time {
+            Some(x) => {
+                match other.0.time {
+                    Some(y) => (x.timestamp() - y.timestamp()) as f64,
+                    None => std::f64::MAX,
+                }
+            },
+            None => std::f64::MAX,
+        }
+    }
+}
 fn gps_to_point(gps: Option<rexiv2::GpsInfo>) -> Option<Point<f64>> {
     match gps {
         Some(x) => {
