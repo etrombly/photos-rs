@@ -80,7 +80,8 @@ fn main() {
              locations.average_time());
     
     println!("Scanning photos");
-    let photos = read_directory("photos");
+    let photos = read_directory("/storage/pictures/2017");
+    println!("Found {} photos", photos.len());
 
     for photo in &photos {
         println!("  Name: {}", photo.path.display());
@@ -107,9 +108,10 @@ fn main() {
         }
     }
     let scanner = BruteScan::new(&photos);
-    let mut dbscan = Dbscan::new(scanner, 500.0, 3);
+    let mut dbscan = Dbscan::new(scanner, 1000.0, 3);
     let clusters = dbscan.by_ref().collect::<Vec<_>>();
     for cluster in clusters {
+        println!("Cluster located near {:?}", photos[cluster[0]].loc);
         for photo in cluster {
             print!("{:?} ", photos[photo].path);
         }
