@@ -162,15 +162,15 @@ fn main() {
         println!("\n");
     }
 
-    let timephotos = photos.iter().map(|ref x| TimePhoto(&x)).collect::<Vec<_>>();
+    let timephotos = photos.iter().map(|x| TimePhoto(x)).collect::<Vec<_>>();
     let timescanner = BruteScan::new(&timephotos);
     let mut timedbscan = Dbscan::new(timescanner, 600.0, 10);
     let timeclusters = timedbscan.by_ref().collect::<Vec<_>>();
     for cluster in timeclusters {
         println!("Cluster located at {:?}", timephotos[cluster[0]].0.time);
-            for photo in cluster {
-                print!("{:?}", timephotos[photo].0.path);
-            }
+        for photo in cluster {
+            print!("{:?}", timephotos[photo].0.path);
+        }
         println!("\n");
     }
 }
