@@ -90,7 +90,7 @@ impl<'a> cogset::Point for TimePhoto<'a> {
 
 fn gps_to_point(gps: Option<rexiv2::GpsInfo>) -> Option<Point<f64>> {
     match gps {
-        Some(x) => Some(Point::new(x.latitude, x.longitude)),
+        Some(x) => Some(Point::new(x.longitude, x.latitude)),
         None => None,
     }
 }
@@ -125,18 +125,18 @@ fn main() {
             println!("  Date: {:?}", time);
             if let Some(closest) = locations.find_closest(time) {
                 println!(
-                    "  closest timestamp: {:?} lat: {} long: {} accuracy: {}",
+                    "  closest timestamp: {:?} long: {} lat: {} accuracy: {}",
                     closest.timestamp,
-                    closest.latitude,
                     closest.longitude,
+                    closest.latitude,
                     closest.accuracy
                 );
                 if let Some(x) = photo.loc {
                     println!(
                         "  distance error meters: {:.2}",
                         x.haversine_distance(&Point::new(
-                            closest.latitude as f64,
-                            closest.longitude as f64,
+                            closest.longitude,
+                            closest.latitude,
                         ))
                     );
                 }

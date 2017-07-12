@@ -77,7 +77,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "location_history"
 version = "0.1.0"
-source = "git+https://github.com/etrombly/location_history#8590fc65c06ce1eacc21c516d263764f112b0aec"
+source = "git+https://github.com/etrombly/location_history#0f67d1b4fc4fbd7694f17a545dc74eeead9be4c6"
 dependencies = [
  "chrono 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 1.0.10 (registry+https://github.com/rust-lang/crates.io-index)",
