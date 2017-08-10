@@ -25,9 +25,9 @@ use geo::Point;
 use geo::algorithm::haversine_distance::HaversineDistance;
 use cogset::{Dbscan, BruteScan};
 use walkdir::WalkDir;
-use gtk::{BoxExt, CellLayoutExt, ContainerExt, FileChooserDialog, FileChooserExt, Dialog,
+use gtk::{BoxExt, ButtonExt, CellLayoutExt, ContainerExt, FileChooserDialog, FileChooserExt, Dialog,
           DialogExt, Inhibit, Menu, MenuBar, MenuItem, MenuItemExt, MenuShellExt, OrientableExt,
-          ProgressBar, TreeView, Viewport, WidgetExt, WindowExt};
+          ProgressBar, ScrolledWindowExt, TreeView, Viewport, WidgetExt, WindowExt};
 use gtk::Orientation::{Vertical, Horizontal};
 use relm::{Relm, Update, Widget};
 use relm_attributes::widget;
@@ -202,7 +202,8 @@ pub struct Model {
 
 #[derive(Msg)]
 pub enum Msg {
-    FileDialog,
+    JsonDialog,
+    DirDialog,
     AboutDialog,
     Quit,
 }
@@ -223,11 +224,16 @@ impl Widget for Win {
     // Update the model according to the message received.
     fn update(&mut self, event: Msg) {
         match event {
-            FileDialog => {
-                if let Some(x) = self.file_dialog() {
+            JsonDialog => {
+                if let Some(x) = self.json_dialog() {
                     self.model.locations = self.load_json(x);
                 };
-            }
+            },
+            DirDialog => {
+                if let Some(x) = self.dir_dialog() {
+                    self.load_photos(x);
+                };
+            },
             AboutDialog => self.about_dialog(),
             Quit => gtk::main_quit(),
         }
@@ -241,27 +247,46 @@ impl Widget for Win {
                 // Set the orientation property of the Box.
                 orientation: Vertical,
                 MyMenuBar {
-                    SelectFile => FileDialog,
+                    SelectFile => JsonDialog,
                     SortOrder(ref x) => view@SortChanged(x.clone()),
                     MenuAbout => AboutDialog,
                     MenuQuit => Quit,
                 },
                 gtk::Box {
                     orientation: Horizontal,
-                    gtk::ScrolledWindow {
-                        packing: {
-                            expand: true,
+                    gtk::Box{
+                        orientation: Vertical,
+                        gtk::Label{
+                            text: "Directories",
                         },
-                        #[name="view"]
-                        MyViewPort,
+                        gtk::ScrolledWindow {
+                            property_hscrollbar_policy: gtk::PolicyType::Never,
+                            packing: {
+                                expand: true,
+                            },
+                            #[name="view"]
+                            MyViewPort,
+                        },
+                        gtk::Button {
+                            label: "Add Directory",
+                            clicked => DirDialog,
+                        }
                     },
-                    gtk::DrawingArea {},
-                    gtk::ScrolledWindow {
+                    gtk::DrawingArea {
                         packing: {
-                            expand: true,
+                                expand: true,
                         },
-                        #[name="view2"]
-                        MyViewPort,
+                    },
+                    gtk::Box{
+                        orientation: Vertical,
+                        gtk::Label {
+                            text: "Clusters",
+                        },
+                        gtk::ScrolledWindow {
+                            property_hscrollbar_policy: gtk::PolicyType::Never,
+                            #[name="view2"]
+                            MyViewPort,
+                        },
                     },
                 },
             },
@@ -271,7 +296,7 @@ impl Widget for Win {
 }
 
 impl Win {
-    fn file_dialog(&self) -> Option<PathBuf> {
+    fn json_dialog(&self) -> Option<PathBuf> {
         let dialog = FileChooserDialog::new::<gtk::Window>(
             Some("Import File"),
             Some(&self.root()),
@@ -281,6 +306,24 @@ impl Win {
         filter.set_name("json");
         filter.add_pattern("*.json");
         dialog.add_filter(&filter);
+        dialog.add_button("Ok", gtk::ResponseType::Ok.into());
+        dialog.add_button("Cancel", gtk::ResponseType::Cancel.into());
+        let response_ok: i32 = gtk::ResponseType::Ok.into();
+        if dialog.run() == response_ok {
+            let path = dialog.get_filename();
+            dialog.destroy();
+            return path;
+        }
+        dialog.destroy();
+        None
+    }
+
+    fn dir_dialog(&self) -> Option<PathBuf> {
+        let dialog = FileChooserDialog::new::<gtk::Window>(
+            Some("Import File"),
+            Some(&self.root()),
+            gtk::FileChooserAction::SelectFolder,
+        );
         dialog.add_button("Ok", gtk::ResponseType::Ok.into());
         dialog.add_button("Cancel", gtk::ResponseType::Cancel.into());
         let response_ok: i32 = gtk::ResponseType::Ok.into();
@@ -315,6 +358,67 @@ impl Win {
             .read_to_string(&mut contents)
             .unwrap();
         location_history::deserialize(&contents).filter_outliers()
+    }
+
+    fn load_photos(&self, path: PathBuf) {
+        while gtk::events_pending() {
+            gtk::main_iteration_do(false);
+        }
+        println!("Scanning photos");
+        let photos = read_directory(&path);
+        println!("Found {} photos", photos.len());
+
+        for photo in &photos {
+            println!("  Name: {}", photo.path.display());
+            gtk::main_iteration_do(false);
+            if let Some(time) = photo.time {
+                println!("  Date: {:?}", time);
+                if let Some(closest) = self.model.locations.find_closest(time) {
+                    println!(
+                        "  closest timestamp: {:?} long: {} lat: {} accuracy: {}",
+                        closest.timestamp,
+                        closest.longitude,
+                        closest.latitude,
+                        closest.accuracy
+                    );
+                    if let Some(x) = photo.loc {
+                        println!(
+                            "  distance error meters: {:.2}",
+                            x.haversine_distance(&Point::new(
+                                closest.longitude,
+                                closest.latitude,
+                            ))
+                        );
+                    }
+                }
+                if let Some(x) = photo.loc {
+                    println!("  actual location: {:?}", x);
+                }
+            }
+        }
+
+        let scanner = BruteScan::new(&photos);
+        let mut dbscan = Dbscan::new(scanner, 1000.0, 3);
+        let clusters = dbscan.by_ref().collect::<Vec<_>>();
+        for cluster in clusters {
+            println!("Cluster located near {:?}", photos[cluster[0]].loc);
+            for photo in cluster {
+                print!("{:?} ", photos[photo].path);
+            }
+            println!("\n");
+        }
+
+        let timephotos = photos.iter().map(|x| TimePhoto(x)).collect::<Vec<_>>();
+        let timescanner = BruteScan::new(&timephotos);
+        let mut timedbscan = Dbscan::new(timescanner, 600.0, 10);
+        let timeclusters = timedbscan.by_ref().collect::<Vec<_>>();
+        for cluster in timeclusters {
+            println!("Cluster located at {:?}", timephotos[cluster[0]].0.time);
+            for photo in cluster {
+                print!("{:?} ", timephotos[photo].0.path);
+            }
+            println!("\n");
+        }
     }
 }
 
@@ -398,67 +502,10 @@ fn gps_to_point(gps: Option<rexiv2::GpsInfo>) -> Option<Point<f64>> {
 }
 
 fn main() {
-    println!("Scanning photos");
-    let photos = read_directory("/home/eric/Pictures/");
-    println!("Found {} photos", photos.len());
-
-    for photo in &photos {
-        println!("  Name: {}", photo.path.display());
-        if let Some(time) = photo.time {
-            println!("  Date: {:?}", time);
-            /*
-            if let Some(closest) = locations.find_closest(time) {
-                println!(
-                    "  closest timestamp: {:?} long: {} lat: {} accuracy: {}",
-                    closest.timestamp,
-                    closest.longitude,
-                    closest.latitude,
-                    closest.accuracy
-                );
-                if let Some(x) = photo.loc {
-                    println!(
-                        "  distance error meters: {:.2}",
-                        x.haversine_distance(&Point::new(
-                            closest.longitude,
-                            closest.latitude,
-                        ))
-                    );
-                }
-            }
-            */
-            if let Some(x) = photo.loc {
-                println!("  actual location: {:?}", x);
-            }
-        }
-        println!("");
-    }
-
-    let scanner = BruteScan::new(&photos);
-    let mut dbscan = Dbscan::new(scanner, 1000.0, 3);
-    let clusters = dbscan.by_ref().collect::<Vec<_>>();
-    for cluster in clusters {
-        println!("Cluster located near {:?}", photos[cluster[0]].loc);
-        for photo in cluster {
-            print!("{:?} ", photos[photo].path);
-        }
-        println!("\n");
-    }
-
-    let timephotos = photos.iter().map(|x| TimePhoto(x)).collect::<Vec<_>>();
-    let timescanner = BruteScan::new(&timephotos);
-    let mut timedbscan = Dbscan::new(timescanner, 600.0, 10);
-    let timeclusters = timedbscan.by_ref().collect::<Vec<_>>();
-    for cluster in timeclusters {
-        println!("Cluster located at {:?}", timephotos[cluster[0]].0.time);
-        for photo in cluster {
-            print!("{:?} ", timephotos[photo].0.path);
-        }
-        println!("\n");
-    }
     Win::run(()).unwrap();
 }
 
-fn read_directory(dir: &str) -> Vec<Photo> {
+fn read_directory(dir: &PathBuf) -> Vec<Photo> {
     let files = WalkDir::new(dir).into_iter().filter_map(|e| e.ok());
     let files = files.filter(|x| Metadata::new_from_path(x.path()).is_ok());
     files.map(|x| Photo::new(x.path().to_path_buf())).collect()
