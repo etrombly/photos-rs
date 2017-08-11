@@ -129,7 +129,7 @@ pub struct ViewModel {
 
 #[derive(Msg)]
 pub enum ViewMsg {
-    SortChanged(SortBy),
+    UpdateView(gtk::TreeStore),
 }
 
 impl Update for MyViewPort {
@@ -145,9 +145,8 @@ impl Update for MyViewPort {
 
     fn update(&mut self, event: ViewMsg) {
         match event {
-            SortChanged(order) => {
-                self.model.order = order;
-                self.update_tree_model();
+            UpdateView(model) => {
+                self.tree.set_model(&model);
             }
         }
     }
@@ -194,11 +193,6 @@ impl Widget for MyViewPort {
     }
 }
 
-impl MyViewPort {
-    fn update_tree_model(&self) {
-    }
-}
-
 #[derive(Clone)]
 pub struct Model {
     locations: Locations,
@@ -239,7 +233,7 @@ impl Widget for Win {
                 if let Some(x) = self.folder_dialog() {
                     self.model.photos = self.load_photos(x);
                     self.update_locations();
-                    self.cluster_location();
+                    self.view.emit(UpdateView(self.cluster_location()));
                     self.cluster_time();
                 };
             },
@@ -258,11 +252,13 @@ impl Widget for Win {
                 MyMenuBar {
                     SelectFile => JsonDialog,
                     SelectFolder => FolderDialog,
-                    SortOrder(ref x) => view@SortChanged(x.clone()),
                     MenuAbout => AboutDialog,
                     MenuQuit => Quit,
                 },
                 gtk::Box {
+                    packing: {
+                                expand: true,
+                    },
                     orientation: Horizontal,
                     gtk::DrawingArea {
                         packing: {
@@ -276,6 +272,10 @@ impl Widget for Win {
                         },
                         gtk::ScrolledWindow {
                             property_hscrollbar_policy: gtk::PolicyType::Never,
+                            packing: {
+                                expand: true,
+                                fill: true,
+                            },
                             #[name="view"]
                             MyViewPort,
                         },
@@ -382,17 +382,28 @@ impl Win {
         }
     }
 
-    fn cluster_location(&self) {
+    fn cluster_location(&self) -> gtk::TreeStore {
         let scanner = BruteScan::new(&self.model.photos);
         let mut dbscan = Dbscan::new(scanner, 1000.0, 3);
         let clusters = dbscan.by_ref().collect::<Vec<_>>();
+        let model = gtk::TreeStore::new(&[gtk::Type::String, gtk::Type::String, gtk::Type::String]);
         for cluster in clusters {
+            let top = model.append(None);
+            model.set(&top, &[0], &[&format!("{:?}",self.model.photos[cluster[0]].location)]);
             println!("Cluster located near {:?}", self.model.photos[cluster[0]].location);
             for photo in cluster {
+                let entries = model.append(&top);
+                model.set(
+                    &entries,
+                    &[1],
+                    &[
+                        &format!("{:?} ", self.model.photos[photo].path),
+                    ],
+                );
                 print!("{:?} ", self.model.photos[photo].path);
             }
-            println!("\n");
         }
+        model
     }
 
     fn cluster_time(&self) {
