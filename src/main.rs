@@ -19,19 +19,19 @@ use rexiv2::Metadata;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
-use chrono::NaiveDateTime;
 use location_history::{Locations, LocationsExt};
-use geo::Point;
-use geo::algorithm::haversine_distance::HaversineDistance;
 use cogset::{Dbscan, BruteScan};
 use walkdir::WalkDir;
-use gtk::{BoxExt, ButtonExt, CellLayoutExt, ContainerExt, FileChooserDialog, FileChooserExt, Dialog,
+use gtk::{BoxExt, CellLayoutExt, ContainerExt, FileChooserDialog, FileChooserExt,
           DialogExt, Inhibit, Menu, MenuBar, MenuItem, MenuItemExt, MenuShellExt, OrientableExt,
-          ProgressBar, ScrolledWindowExt, TreeView, Viewport, WidgetExt, WindowExt};
+          ScrolledWindowExt, TreeView, Viewport, WidgetExt, WindowExt};
 use gtk::Orientation::{Vertical, Horizontal};
 use relm::{Relm, Update, Widget};
 use relm_attributes::widget;
 
+mod photo;
+
+use photo::{Photo, TimePhoto};
 use self::Msg::*;
 use self::ViewMsg::*;
 use self::MenuMsg::*;
@@ -40,6 +40,7 @@ use self::MenuMsg::*;
 #[derive(Msg)]
 enum MenuMsg {
     SelectFile,
+    SelectFolder,
     SortOrder(SortBy),
     MenuAbout,
     MenuQuit,
@@ -76,6 +77,7 @@ impl Widget for MyMenuBar {
 
         let file = MenuItem::new_with_label("File");
         let quit = MenuItem::new_with_label("Quit");
+        let folder_item = MenuItem::new_with_label("Import photos");
         let file_item = MenuItem::new_with_label("Import LocationHistory");
 
         let sort = MenuItem::new_with_label("Sort");
@@ -86,11 +88,13 @@ impl Widget for MyMenuBar {
         let about = MenuItem::new_with_label("About");
 
         connect!(relm, quit, connect_activate(_), MenuQuit);
+        connect!(relm, folder_item, connect_activate(_), SelectFolder);
         connect!(relm, file_item, connect_activate(_), SelectFile);
         connect!(relm, year, connect_activate(_), SortOrder(SortBy::Year));
         connect!(relm, country, connect_activate(_), SortOrder(SortBy::Country));
         connect!(relm, about, connect_activate(_), MenuAbout);
 
+        menu_file.append(&folder_item);
         menu_file.append(&file_item);
         menu_file.append(&quit);
         file.set_submenu(Some(&menu_file));
@@ -198,12 +202,13 @@ impl MyViewPort {
 #[derive(Clone)]
 pub struct Model {
     locations: Locations,
+    photos: Vec<Photo>,
 }
 
 #[derive(Msg)]
 pub enum Msg {
     JsonDialog,
-    DirDialog,
+    FolderDialog,
     AboutDialog,
     Quit,
 }
@@ -218,7 +223,7 @@ pub enum SortBy {
 impl Widget for Win {
     // The initial model.
     fn model() -> Model {
-        Model {locations: Vec::new()}
+        Model {locations: Vec::new(), photos: Vec::new()}
     }
 
     // Update the model according to the message received.
@@ -227,11 +232,15 @@ impl Widget for Win {
             JsonDialog => {
                 if let Some(x) = self.json_dialog() {
                     self.model.locations = self.load_json(x);
+                    self.update_locations();
                 };
             },
-            DirDialog => {
-                if let Some(x) = self.dir_dialog() {
-                    self.load_photos(x);
+            FolderDialog => {
+                if let Some(x) = self.folder_dialog() {
+                    self.model.photos = self.load_photos(x);
+                    self.update_locations();
+                    self.cluster_location();
+                    self.cluster_time();
                 };
             },
             AboutDialog => self.about_dialog(),
@@ -248,30 +257,13 @@ impl Widget for Win {
                 orientation: Vertical,
                 MyMenuBar {
                     SelectFile => JsonDialog,
+                    SelectFolder => FolderDialog,
                     SortOrder(ref x) => view@SortChanged(x.clone()),
                     MenuAbout => AboutDialog,
                     MenuQuit => Quit,
                 },
                 gtk::Box {
                     orientation: Horizontal,
-                    gtk::Box{
-                        orientation: Vertical,
-                        gtk::Label{
-                            text: "Directories",
-                        },
-                        gtk::ScrolledWindow {
-                            property_hscrollbar_policy: gtk::PolicyType::Never,
-                            packing: {
-                                expand: true,
-                            },
-                            #[name="view"]
-                            MyViewPort,
-                        },
-                        gtk::Button {
-                            label: "Add Directory",
-                            clicked => DirDialog,
-                        }
-                    },
                     gtk::DrawingArea {
                         packing: {
                                 expand: true,
@@ -284,7 +276,7 @@ impl Widget for Win {
                         },
                         gtk::ScrolledWindow {
                             property_hscrollbar_policy: gtk::PolicyType::Never,
-                            #[name="view2"]
+                            #[name="view"]
                             MyViewPort,
                         },
                     },
@@ -318,7 +310,7 @@ impl Win {
         None
     }
 
-    fn dir_dialog(&self) -> Option<PathBuf> {
+    fn folder_dialog(&self) -> Option<PathBuf> {
         let dialog = FileChooserDialog::new::<gtk::Window>(
             Some("Import File"),
             Some(&self.root()),
@@ -360,55 +352,51 @@ impl Win {
         location_history::deserialize(&contents).filter_outliers()
     }
 
-    fn load_photos(&self, path: PathBuf) {
+    fn load_photos(&self, path: PathBuf) -> Vec<Photo> {
         while gtk::events_pending() {
             gtk::main_iteration_do(false);
         }
         println!("Scanning photos");
-        let photos = read_directory(&path);
-        println!("Found {} photos", photos.len());
+        let files = WalkDir::new(path).into_iter().filter_map(|e| e.ok());
+        let files = files.filter(|x| Metadata::new_from_path(x.path()).is_ok());
+        files.map(|x| Photo::new(x.path().to_path_buf())).collect()
+    }
 
-        for photo in &photos {
-            println!("  Name: {}", photo.path.display());
-            gtk::main_iteration_do(false);
-            if let Some(time) = photo.time {
-                println!("  Date: {:?}", time);
-                if let Some(closest) = self.model.locations.find_closest(time) {
-                    println!(
-                        "  closest timestamp: {:?} long: {} lat: {} accuracy: {}",
-                        closest.timestamp,
-                        closest.longitude,
-                        closest.latitude,
-                        closest.accuracy
-                    );
-                    if let Some(x) = photo.loc {
+    fn update_locations(&mut self) {
+        for photo in self.model.photos.iter_mut() {
+            if photo.location == None {
+                if let Some(time) = photo.time {
+                    println!("  Date: {:?}", time);
+                    if let Some(closest) = self.model.locations.find_closest(time) {
                         println!(
-                            "  distance error meters: {:.2}",
-                            x.haversine_distance(&Point::new(
-                                closest.longitude,
-                                closest.latitude,
-                            ))
+                            "  closest timestamp: {:?} long: {} lat: {} accuracy: {}",
+                            closest.timestamp,
+                            closest.longitude,
+                            closest.latitude,
+                            closest.accuracy
                         );
+                        photo.set_location(closest);
                     }
-                }
-                if let Some(x) = photo.loc {
-                    println!("  actual location: {:?}", x);
                 }
             }
         }
+    }
 
-        let scanner = BruteScan::new(&photos);
+    fn cluster_location(&self) {
+        let scanner = BruteScan::new(&self.model.photos);
         let mut dbscan = Dbscan::new(scanner, 1000.0, 3);
         let clusters = dbscan.by_ref().collect::<Vec<_>>();
         for cluster in clusters {
-            println!("Cluster located near {:?}", photos[cluster[0]].loc);
+            println!("Cluster located near {:?}", self.model.photos[cluster[0]].location);
             for photo in cluster {
-                print!("{:?} ", photos[photo].path);
+                print!("{:?} ", self.model.photos[photo].path);
             }
             println!("\n");
         }
+    }
 
-        let timephotos = photos.iter().map(|x| TimePhoto(x)).collect::<Vec<_>>();
+    fn cluster_time(&self) {
+        let timephotos = self.model.photos.iter().map(|x| TimePhoto(x)).collect::<Vec<_>>();
         let timescanner = BruteScan::new(&timephotos);
         let mut timedbscan = Dbscan::new(timescanner, 600.0, 10);
         let timeclusters = timedbscan.by_ref().collect::<Vec<_>>();
@@ -422,91 +410,6 @@ impl Win {
     }
 }
 
-#[derive(Debug)]
-struct Photo {
-    path: PathBuf,
-    meta: Option<Metadata>,
-    loc: Option<Point<f64>>,
-    time: Option<NaiveDateTime>,
-}
-
-struct TimePhoto<'a>(&'a Photo);
-
-impl Photo {
-    pub fn new(path: PathBuf) -> Photo {
-        let meta = match Metadata::new_from_path(path.clone()) {
-            Ok(x) => Some(x),
-            Err(_) => None,
-        };
-        let loc = match &meta {
-            &Some(ref x) => gps_to_point(x.get_gps_info()),
-            &None => None,
-        };
-        let time = match &meta {
-            &Some(ref x) => {
-                match x.get_tag_string("Exif.Image.DateTime") {
-                    Ok(y) => {
-                        match NaiveDateTime::parse_from_str(&y, "%Y:%m:%d %H:%M:%S") {
-                            Ok(z) => Some(z),
-                            Err(_) => None,
-                        }
-                    }
-                    Err(_) => None,
-                }
-            }   
-            &None => None,
-        };
-        Photo {
-            path,
-            meta,
-            loc,
-            time,
-        }
-    }
-}
-
-impl cogset::Point for Photo {
-    fn dist(&self, other: &Photo) -> f64 {
-        // returning MAX isn't really correct, but shouldn't throw off the clustering
-        match self.loc {
-            Some(x) => {
-                match other.loc {
-                    Some(y) => x.haversine_distance(&y),
-                    None => std::f64::MAX,
-                }
-            }
-            None => std::f64::MAX,
-        }
-    }
-}
-
-impl<'a> cogset::Point for TimePhoto<'a> {
-    fn dist(&self, other: &TimePhoto) -> f64 {
-        match self.0.time {
-            Some(x) => {
-                match other.0.time {
-                    Some(y) => ((x.timestamp() - y.timestamp()) as f64).abs(),
-                    None => std::f64::MAX,
-                }
-            }
-            None => std::f64::MAX,
-        }
-    }
-}
-
-fn gps_to_point(gps: Option<rexiv2::GpsInfo>) -> Option<Point<f64>> {
-    match gps {
-        Some(x) => Some(Point::new(x.longitude, x.latitude)),
-        None => None,
-    }
-}
-
 fn main() {
     Win::run(()).unwrap();
-}
-
-fn read_directory(dir: &PathBuf) -> Vec<Photo> {
-    let files = WalkDir::new(dir).into_iter().filter_map(|e| e.ok());
-    let files = files.filter(|x| Metadata::new_from_path(x.path()).is_ok());
-    files.map(|x| Photo::new(x.path().to_path_buf())).collect()
 }
