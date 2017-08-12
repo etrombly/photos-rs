@@ -8,6 +8,7 @@ extern crate geo;
 extern crate cogset;
 extern crate walkdir;
 extern crate gtk;
+extern crate gdk;
 extern crate gdk_pixbuf;
 #[macro_use]
 extern crate relm;
@@ -30,6 +31,7 @@ use gtk::{BoxExt, CellLayoutExt, ContainerExt, FileChooserDialog, FileChooserExt
           DialogExt, Inhibit, Menu, MenuBar, MenuItem, MenuItemExt, MenuShellExt, OrientableExt,
           ScrolledWindowExt, TreeView, Viewport, WidgetExt, WindowExt};
 use gtk::Orientation::{Vertical, Horizontal};
+use gdk::prelude::ContextExt;
 use relm::{Relm, Update, Widget};
 use relm_attributes::widget;
 use hyper::{Client, Error};
@@ -164,8 +166,8 @@ impl Widget for MyViewPort {
         end_column.pack_start(&end_column_cell, true);
 
         tree.append_column(&name_column);
-        tree.append_column(&start_column);
-        tree.append_column(&end_column);
+        //tree.append_column(&start_column);
+        //tree.append_column(&end_column);
 
         name_column.add_attribute(&name_column_cell, "text", 0);
         start_column.add_attribute(&start_column_cell, "text", 1);
@@ -201,6 +203,21 @@ pub enum SortBy {
 
 #[widget]
 impl Widget for Win {
+    fn init_view(&mut self) {
+        self.map.connect_draw(move |widget, context| {
+            let width = widget.get_allocated_width() as f64;
+            let height = widget.get_allocated_height() as f64;
+            let pix = gdk_pixbuf::Pixbuf::new_from_file("src/map.png").unwrap();
+            let width_scale = width / pix.get_width() as f64;
+            let height_scale = height / pix.get_height() as f64;
+            let scale = if width_scale < height_scale {width_scale} else {height_scale};
+            context.scale(scale, scale);
+            context.set_source_pixbuf(&pix, 0f64, 0f64);
+            context.paint();
+            return Inhibit(false);
+        });
+    }
+
     // The initial model.
     fn model() -> Model {
         Model {locations: Vec::new(), photos: Vec::new()}
@@ -246,6 +263,7 @@ impl Widget for Win {
                                 expand: true,
                     },
                     orientation: Horizontal,
+                    #[name="map"]
                     gtk::DrawingArea {
                         packing: {
                                 expand: true,
