@@ -2,18 +2,20 @@
 authors = ["Eric Trombly <etrombly@yahoo.com>"]
 name = "photos-rs"
 version = "0.1.0"
-
 [dependencies]
 cogset = "0.2.0"
+futures = "0.1.14"
+gdk-pixbuf = "0.1.3"
+geo = "0.4"
+gtk = "0.1.3"
+gtk-sys = "0.3.4"
+hyper = "0.11.2"
+hyper-tls = "0.1.2"
 rexiv2 = "0.5"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
 walkdir = "1.0.7"
-geo = "0.4"
-gtk = "0.1.3"
-gtk-sys = "0.3.4"
-gdk-pixbuf = "0.1.3"
 
 [dependencies.chrono]
 features = ["serde"]
@@ -23,16 +25,15 @@ version = "0.4"
 git = "https://github.com/etrombly/location_history"
 
 [dependencies.relm]
-git = "https://github.com/antoyo/relm"
 branch = "feature/futures-glib"
+git = "https://github.com/antoyo/relm"
 
 [dependencies.relm-attributes]
-git = "https://github.com/antoyo/relm"
 branch = "feature/futures-glib"
+git = "https://github.com/antoyo/relm"
 
 [dependencies.relm-derive]
-git = "https://github.com/antoyo/relm"
 branch = "feature/futures-glib"
-
+git = "https://github.com/antoyo/relm"
 [profile.release]
 lto = true

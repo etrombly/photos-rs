@@ -1,4 +1,4 @@
-#![feature(proc_macro)]
+#![feature(conservative_impl_trait, fn_traits, proc_macro, unboxed_closures)]
 #![windows_subsystem = "windows"]
 
 extern crate chrono;
@@ -14,11 +14,15 @@ extern crate relm;
 extern crate relm_attributes;
 #[macro_use]
 extern crate relm_derive;
+extern crate futures;
+extern crate hyper;
+extern crate hyper_tls;
 
 use rexiv2::Metadata;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::PathBuf;
+use std::str::FromStr;
 use location_history::{Locations, LocationsExt};
 use cogset::{Dbscan, BruteScan};
 use walkdir::WalkDir;
@@ -28,6 +32,9 @@ use gtk::{BoxExt, CellLayoutExt, ContainerExt, FileChooserDialog, FileChooserExt
 use gtk::Orientation::{Vertical, Horizontal};
 use relm::{Relm, Update, Widget};
 use relm_attributes::widget;
+use hyper::{Client, Error};
+use hyper_tls::HttpsConnector;
+use futures::{Future, Stream};
 
 mod photo;
 
@@ -141,10 +148,10 @@ impl Widget for MyViewPort {
         // TODO: change column names and labels
         let view = Viewport::new(None, None);
         let tree = TreeView::new();
-        let country_column = gtk::TreeViewColumn::new();
-        let country_column_cell = gtk::CellRendererText::new();
-        country_column.set_title("Country");
-        country_column.pack_start(&country_column_cell, true);
+        let name_column = gtk::TreeViewColumn::new();
+        let name_column_cell = gtk::CellRendererText::new();
+        name_column.set_title("Name");
+        name_column.pack_start(&name_column_cell, true);
 
         let start_column = gtk::TreeViewColumn::new();
         let start_column_cell = gtk::CellRendererText::new();
@@ -156,11 +163,11 @@ impl Widget for MyViewPort {
         end_column.set_title("End date");
         end_column.pack_start(&end_column_cell, true);
 
-        tree.append_column(&country_column);
+        tree.append_column(&name_column);
         tree.append_column(&start_column);
         tree.append_column(&end_column);
 
-        country_column.add_attribute(&country_column_cell, "text", 0);
+        name_column.add_attribute(&name_column_cell, "text", 0);
         start_column.add_attribute(&start_column_cell, "text", 1);
         end_column.add_attribute(&end_column_cell, "text", 2);
 
@@ -368,13 +375,15 @@ impl Win {
         let model = gtk::TreeStore::new(&[gtk::Type::String, gtk::Type::String, gtk::Type::String]);
         for cluster in clusters {
             let top = model.append(None);
-            model.set(&top, &[0], &[&format!("{:?}",self.model.photos[cluster[0]].location)]);
+            if let Some(point) = self.model.photos[cluster[0]].location{
+                model.set(&top, &[0], &[&format!("{}, {}",point.y(), point.x())]);
+            }
             println!("Cluster located near {:?}", self.model.photos[cluster[0]].location);
             for photo in cluster {
                 let entries = model.append(&top);
                 model.set(
                     &entries,
-                    &[1],
+                    &[0],
                     &[
                         &format!("{:?} ", self.model.photos[photo].path),
                     ],
