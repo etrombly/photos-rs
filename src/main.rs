@@ -41,7 +41,6 @@ use self::MenuMsg::*;
 enum MenuMsg {
     SelectFile,
     SelectFolder,
-    SortOrder(SortBy),
     MenuAbout,
     MenuQuit,
 }
@@ -71,7 +70,6 @@ impl Widget for MyMenuBar {
 
     fn view(relm: &Relm<Self>, _model: Self::Model) -> Self {
         let menu_file = Menu::new();
-        let menu_sort = Menu::new();
         let menu_help = Menu::new();
         let menu_bar = MenuBar::new();
 
@@ -80,18 +78,12 @@ impl Widget for MyMenuBar {
         let folder_item = MenuItem::new_with_label("Import photos");
         let file_item = MenuItem::new_with_label("Import LocationHistory");
 
-        let sort = MenuItem::new_with_label("Sort");
-        let year = MenuItem::new_with_label("Year");
-        let country = MenuItem::new_with_label("Country");
-
         let help = MenuItem::new_with_label("Help");
         let about = MenuItem::new_with_label("About");
 
         connect!(relm, quit, connect_activate(_), MenuQuit);
         connect!(relm, folder_item, connect_activate(_), SelectFolder);
         connect!(relm, file_item, connect_activate(_), SelectFile);
-        connect!(relm, year, connect_activate(_), SortOrder(SortBy::Year));
-        connect!(relm, country, connect_activate(_), SortOrder(SortBy::Country));
         connect!(relm, about, connect_activate(_), MenuAbout);
 
         menu_file.append(&folder_item);
@@ -99,15 +91,11 @@ impl Widget for MyMenuBar {
         menu_file.append(&quit);
         file.set_submenu(Some(&menu_file));
 
-        menu_sort.append(&year);
-        menu_sort.append(&country);
-        sort.set_submenu(&menu_sort);
 
         menu_help.append(&about);
         help.set_submenu(&menu_help);
 
         menu_bar.append(&file);
-        menu_bar.append(&sort);
         menu_bar.append(&help);
         menu_bar.show_all();
 
@@ -117,14 +105,8 @@ impl Widget for MyMenuBar {
 
 #[derive(Clone)]
 struct MyViewPort {
-    model: ViewModel,
     view: Viewport,
     tree: TreeView,
-}
-
-#[derive(Clone)]
-pub struct ViewModel {
-    order: SortBy,
 }
 
 #[derive(Msg)]
@@ -133,15 +115,11 @@ pub enum ViewMsg {
 }
 
 impl Update for MyViewPort {
-    type Model = ViewModel;
+    type Model = ();
     type ModelParam = ();
     type Msg = ViewMsg;
 
-    fn model(_: &Relm<Self>, _: ()) -> ViewModel {
-        ViewModel {
-            order: SortBy::Year,
-        }
-    }
+    fn model(_: &Relm<Self>, _: ()) {}
 
     fn update(&mut self, event: ViewMsg) {
         match event {
@@ -159,7 +137,8 @@ impl Widget for MyViewPort {
         self.view.clone()
     }
 
-    fn view(_relm: &Relm<Self>, model: Self::Model) -> Self {
+    fn view(_relm: &Relm<Self>, _model: Self::Model) -> Self {
+        // TODO: change column names and labels
         let view = Viewport::new(None, None);
         let tree = TreeView::new();
         let country_column = gtk::TreeViewColumn::new();
@@ -189,7 +168,7 @@ impl Widget for MyViewPort {
 
         view.show_all();
 
-        MyViewPort { model, view, tree }
+        MyViewPort { view, tree }
     }
 }
 
