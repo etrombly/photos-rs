@@ -1,4 +1,4 @@
-#![feature(conservative_impl_trait, fn_traits, proc_macro, unboxed_closures)]
+#![feature(conservative_impl_trait, proc_macro, unboxed_closures)]
 #![windows_subsystem = "windows"]
 
 extern crate chrono;
@@ -10,20 +10,22 @@ extern crate walkdir;
 extern crate gtk;
 extern crate gdk;
 extern crate gdk_pixbuf;
+extern crate odds;
 #[macro_use]
 extern crate relm;
 extern crate relm_attributes;
 #[macro_use]
 extern crate relm_derive;
 extern crate futures;
-extern crate hyper;
-extern crate hyper_tls;
+extern crate futures_cpupool;
+extern crate reqwest;
 
 use rexiv2::Metadata;
 use std::fs::File;
-use std::io::prelude::*;
+use std::io::Read;
 use std::path::PathBuf;
-use std::str::FromStr;
+use std::sync::{Arc, Mutex};
+use odds::vec::VecExt;
 use location_history::{Locations, LocationsExt};
 use cogset::{Dbscan, BruteScan};
 use walkdir::WalkDir;
@@ -34,9 +36,9 @@ use gtk::Orientation::{Vertical, Horizontal};
 use gdk::prelude::ContextExt;
 use relm::{Relm, Update, Widget};
 use relm_attributes::widget;
-use hyper::{Client, Error};
-use hyper_tls::HttpsConnector;
-use futures::{Future, Stream};
+use futures::Future;
+use futures::Async::Ready;
+use futures_cpupool::{CpuPool, CpuFuture};
 
 mod photo;
 
@@ -183,8 +185,11 @@ impl Widget for MyViewPort {
 
 #[derive(Clone)]
 pub struct Model {
+    relm: Relm<Win>,
     locations: Locations,
     photos: Vec<Photo>,
+    pool: Arc<CpuPool>,
+    queue: Arc<Mutex<Vec<CpuFuture<String, ()>>>>,
 }
 
 #[derive(Msg)]
@@ -193,12 +198,7 @@ pub enum Msg {
     FolderDialog,
     AboutDialog,
     Quit,
-}
-
-#[derive(Clone)]
-pub enum SortBy {
-    Country,
-    Year,
+    Process,
 }
 
 #[widget]
@@ -216,11 +216,20 @@ impl Widget for Win {
             context.paint();
             return Inhibit(false);
         });
+        let relm = self.model.relm.clone();
+        gtk::timeout_add_seconds(60, move || {
+            relm.stream().emit(Process);
+            gtk::Continue(true)
+        });
     }
 
     // The initial model.
-    fn model() -> Model {
-        Model {locations: Vec::new(), photos: Vec::new()}
+    fn model(relm: &Relm<Self>, _: ()) -> Model {
+        Model {relm: relm.clone(), 
+               locations: Vec::new(), 
+               photos: Vec::new(), 
+               pool: Arc::new(CpuPool::new_num_cpus()), 
+               queue: Arc::new(Mutex::new(Vec::new()))}
     }
 
     // Update the model according to the message received.
@@ -242,6 +251,21 @@ impl Widget for Win {
             },
             AboutDialog => self.about_dialog(),
             Quit => gtk::main_quit(),
+            Process => {
+                let some_future = futures::finished::<(String, String, String), ()>(("".to_string(), "17.421223".to_string(), "78.400674".to_string()))
+                .map(|(key, lat, lon)| {
+                    let req = format!("http://locationiq.org/v1/reverse.php?format=json&key={}&lat={}&lon={}",
+                                    key, lat, lon);
+                    let mut resp = reqwest::get(&req).unwrap();
+                    let mut content = String::new();
+                    resp.read_to_string(&mut content);
+                    content
+                });
+                let mut queue = self.model.queue.lock().unwrap();
+                queue.push(self.model.pool.spawn(some_future));
+                queue.retain_mut(|x| if let Ready(y) = x.poll().unwrap() { println!("{}", y); false } else {true});
+                println!("{}", queue.len());
+            },
         }
     }
 
