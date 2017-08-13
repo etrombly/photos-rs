@@ -29,8 +29,8 @@ use odds::vec::VecExt;
 use location_history::{Locations, LocationsExt};
 use cogset::{Dbscan, BruteScan};
 use walkdir::WalkDir;
-use gtk::{BoxExt, CellLayoutExt, ContainerExt, FileChooserDialog, FileChooserExt,
-          DialogExt, Inhibit, Menu, MenuBar, MenuItem, MenuItemExt, MenuShellExt, OrientableExt,
+use gtk::{BoxExt, CellLayoutExt, ContainerExt, FileChooserDialog, FileChooserExt, DialogExt,
+          Inhibit, Menu, MenuBar, MenuItem, MenuItemExt, MenuShellExt, OrientableExt,
           ScrolledWindowExt, TreeView, Viewport, WidgetExt, WindowExt};
 use gtk::Orientation::{Vertical, Horizontal};
 use gdk::prelude::ContextExt;
@@ -198,6 +198,7 @@ pub enum Msg {
     FolderDialog,
     AboutDialog,
     Quit,
+    Processed(String),
     Process,
 }
 
@@ -210,7 +211,11 @@ impl Widget for Win {
             let pix = gdk_pixbuf::Pixbuf::new_from_file("src/map.png").unwrap();
             let width_scale = width / pix.get_width() as f64;
             let height_scale = height / pix.get_height() as f64;
-            let scale = if width_scale < height_scale {width_scale} else {height_scale};
+            let scale = if width_scale < height_scale {
+                width_scale
+            } else {
+                height_scale
+            };
             context.scale(scale, scale);
             context.set_source_pixbuf(&pix, 0f64, 0f64);
             context.paint();
@@ -225,11 +230,13 @@ impl Widget for Win {
 
     // The initial model.
     fn model(relm: &Relm<Self>, _: ()) -> Model {
-        Model {relm: relm.clone(), 
-               locations: Vec::new(), 
-               photos: Vec::new(), 
-               pool: Arc::new(CpuPool::new_num_cpus()), 
-               queue: Arc::new(Mutex::new(Vec::new()))}
+        Model {
+            relm: relm.clone(),
+            locations: Vec::new(),
+            photos: Vec::new(),
+            pool: Arc::new(CpuPool::new_num_cpus()),
+            queue: Arc::new(Mutex::new(Vec::new())),
+        }
     }
 
     // Update the model according to the message received.
@@ -240,7 +247,7 @@ impl Widget for Win {
                     self.model.locations = self.load_json(x);
                     self.update_locations();
                 };
-            },
+            }
             FolderDialog => {
                 if let Some(x) = self.folder_dialog() {
                     self.model.photos = self.load_photos(x);
@@ -248,9 +255,10 @@ impl Widget for Win {
                     self.view.emit(UpdateView(self.cluster_location()));
                     self.cluster_time();
                 };
-            },
+            }
             AboutDialog => self.about_dialog(),
             Quit => gtk::main_quit(),
+            Processed(result) => println!("{}", result),
             Process => {
                 let some_future = futures::finished::<(String, String, String), ()>(("".to_string(), "17.421223".to_string(), "78.400674".to_string()))
                 .map(|(key, lat, lon)| {
@@ -263,9 +271,14 @@ impl Widget for Win {
                 });
                 let mut queue = self.model.queue.lock().unwrap();
                 queue.push(self.model.pool.spawn(some_future));
-                queue.retain_mut(|x| if let Ready(y) = x.poll().unwrap() { println!("{}", y); false } else {true});
+                queue.retain_mut(|x| if let Ready(result) = x.poll().unwrap() {
+                    self.model.relm.stream().emit(Processed(result));
+                    false
+                } else {
+                    true
+                });
                 println!("{}", queue.len());
-            },
+            }
         }
     }
 
@@ -417,7 +430,7 @@ impl Win {
         let model = gtk::TreeStore::new(&[gtk::Type::String, gtk::Type::String, gtk::Type::String]);
         for cluster in clusters {
             let top = model.append(None);
-            if let Some(point) = self.model.photos[cluster[0]].location{
+            if let Some(point) = self.model.photos[cluster[0]].location {
                 model.set(&top, &[0], &[&format!("{}, {}",point.y(), point.x())]);
             }
             println!("Cluster located near {:?}", self.model.photos[cluster[0]].location);
@@ -426,9 +439,7 @@ impl Win {
                 model.set(
                     &entries,
                     &[0],
-                    &[
-                        &format!("{:?} ", self.model.photos[photo].path),
-                    ],
+                    &[&format!("{:?} ", self.model.photos[photo].path)],
                 );
                 print!("{:?} ", self.model.photos[photo].path);
             }
@@ -437,7 +448,11 @@ impl Win {
     }
 
     fn cluster_time(&self) {
-        let timephotos = self.model.photos.iter().map(|x| TimePhoto(x)).collect::<Vec<_>>();
+        let timephotos = self.model
+            .photos
+            .iter()
+            .map(|x| TimePhoto(x))
+            .collect::<Vec<_>>();
         let timescanner = BruteScan::new(&timephotos);
         let mut timedbscan = Dbscan::new(timescanner, 600.0, 10);
         let timeclusters = timedbscan.by_ref().collect::<Vec<_>>();

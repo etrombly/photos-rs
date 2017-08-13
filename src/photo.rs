@@ -59,7 +59,7 @@ impl Photo {
         }
     }
 
-    pub fn set_location(&mut self, location: Location){
+    pub fn set_location(&mut self, location: Location) {
         self.location = Some(Point::new(location.longitude, location.latitude));
     }
 }
