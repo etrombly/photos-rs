@@ -321,7 +321,9 @@ impl Widget for Win {
             },
             Process => {
                 let mut queue = self.model.queue.lock().unwrap();
-                queue.retain_mut(|x| if let Ready(result) = x.poll().unwrap() {
+                queue.retain_mut(|x| if !x.poll().is_ok() {
+                    false
+                } else if let Ready(result) = x.poll().unwrap() {
                     self.model.relm.stream().emit(Processed(result));
                     false
                 } else {
