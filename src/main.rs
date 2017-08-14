@@ -19,6 +19,9 @@ extern crate relm_derive;
 extern crate futures;
 extern crate futures_cpupool;
 extern crate reqwest;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde;
 extern crate serde_json;
 
 use rexiv2::Metadata;
@@ -40,7 +43,9 @@ use relm_attributes::widget;
 use futures::Future;
 use futures::Async::Ready;
 use futures_cpupool::{CpuPool, CpuFuture};
-use serde_json::{Value, Error};
+use serde_json::{Value, Error, Map};
+use geo::Bbox;
+use geo::contains::Contains;
 
 mod photo;
 
@@ -48,6 +53,31 @@ use photo::{Photo, TimePhoto};
 use self::Msg::*;
 use self::ViewMsg::*;
 use self::MenuMsg::*;
+
+#[derive(Deserialize, Debug)]
+struct Geo {
+    address: Map<String, Value>,
+    #[serde(deserialize_with = "parse_bbox")]
+    boundingbox: Bbox<f64>,
+}
+
+fn parse_bbox<'de, D>(de: D) -> Result<Bbox<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let deser_result: serde_json::Value = try!(serde::Deserialize::deserialize(de));
+    match deser_result {
+        serde_json::Value::Array(ref s) => {
+            Ok(Bbox {
+                xmin: s[2].as_str().unwrap().parse::<f64>().unwrap(),
+                xmax: s[3].as_str().unwrap().parse::<f64>().unwrap(),
+                ymin: s[0].as_str().unwrap().parse::<f64>().unwrap(),
+                ymax: s[1].as_str().unwrap().parse::<f64>().unwrap(),
+            })
+        }
+        _ => Err(serde::de::Error::custom("Unexpected value")),
+    }
+}
 
 // The messages that can be sent to the update function.
 #[derive(Msg)]
@@ -266,7 +296,7 @@ impl Widget for Win {
                                                                                     lat.to_string(), 
                                                                                     lon.to_string()))
                 .map(|(key, lat, lon)| {
-                    let req = format!("http://locationiq.org/v1/reverse.php?format=json&zoom=14&key={}&lat={}&lon={}",
+                    let req = format!("http://locationiq.org/v1/reverse.php?format=json&zoom=13&key={}&lat={}&lon={}",
                                     key, lat, lon);
                     let mut resp = reqwest::get(&req).unwrap();
                     let mut content = String::new();
@@ -277,9 +307,16 @@ impl Widget for Win {
                 queue.push(self.model.pool.spawn(some_future));
             },
             Processed(result) => {
-                if let Ok(v) = serde_json::from_str::<Value>(&result){
-                    println!("{}\n{}\n", v["address"], v["boundingbox"]);
-                    //self.view.emit(UpdateView(self.cluster_location()));
+                if let Ok(v) = serde_json::from_str::<Geo>(&result){
+                    println!("{:?}\n{:?}\n", v.address["country"], v.boundingbox);
+                    for photo in self.model.photos.iter_mut() {
+                        if let Some(location) = photo.location {
+                            if v.boundingbox.contains(&location){
+                                photo.location_name = Some(v.address["country"].as_str().unwrap().to_owned());
+                            }
+                        } 
+                    }
+                    self.view.emit(UpdateView(self.cluster_location()));
                 }
             },
             Process => {
@@ -444,8 +481,7 @@ impl Win {
             let top = model.append(None);
             if let Some(x) = cluster.iter().find(|&&x| self.model.photos[x].location_name.is_some()){
                 model.set(&top, &[0], &[self.model.photos[*x].location_name.as_ref().unwrap()]);
-            }
-            if let Some(point) = self.model.photos[cluster[0]].location {
+            } else if let Some(point) = self.model.photos[cluster[0]].location {
                 model.set(&top, &[0], &[&format!("{}, {}",point.y(), point.x())]);
                 self.model.relm.stream().emit(GeoLookup(point.y(), point.x()));
             }
