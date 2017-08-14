@@ -19,6 +19,7 @@ extern crate relm_derive;
 extern crate futures;
 extern crate futures_cpupool;
 extern crate reqwest;
+extern crate serde_json;
 
 use rexiv2::Metadata;
 use std::fs::File;
@@ -39,6 +40,7 @@ use relm_attributes::widget;
 use futures::Future;
 use futures::Async::Ready;
 use futures_cpupool::{CpuPool, CpuFuture};
+use serde_json::{Value, Error};
 
 mod photo;
 
@@ -198,6 +200,7 @@ pub enum Msg {
     FolderDialog,
     AboutDialog,
     Quit,
+    GeoLookup(f64, f64),
     Processed(String),
     Process,
 }
@@ -222,7 +225,7 @@ impl Widget for Win {
             return Inhibit(false);
         });
         let relm = self.model.relm.clone();
-        gtk::timeout_add_seconds(60, move || {
+        gtk::timeout_add_seconds(1, move || {
             relm.stream().emit(Process);
             gtk::Continue(true)
         });
@@ -258,11 +261,12 @@ impl Widget for Win {
             }
             AboutDialog => self.about_dialog(),
             Quit => gtk::main_quit(),
-            Processed(result) => println!("{}", result),
-            Process => {
-                let some_future = futures::finished::<(String, String, String), ()>(("".to_string(), "17.421223".to_string(), "78.400674".to_string()))
+            GeoLookup(lat, lon) => {
+                let some_future = futures::finished::<(String, String, String), ()>(("".to_string(), 
+                                                                                    lat.to_string(), 
+                                                                                    lon.to_string()))
                 .map(|(key, lat, lon)| {
-                    let req = format!("http://locationiq.org/v1/reverse.php?format=json&key={}&lat={}&lon={}",
+                    let req = format!("http://locationiq.org/v1/reverse.php?format=json&zoom=14&key={}&lat={}&lon={}",
                                     key, lat, lon);
                     let mut resp = reqwest::get(&req).unwrap();
                     let mut content = String::new();
@@ -271,13 +275,21 @@ impl Widget for Win {
                 });
                 let mut queue = self.model.queue.lock().unwrap();
                 queue.push(self.model.pool.spawn(some_future));
+            },
+            Processed(result) => {
+                if let Ok(v) = serde_json::from_str::<Value>(&result){
+                    println!("{}\n{}\n", v["address"], v["boundingbox"]);
+                    //self.view.emit(UpdateView(self.cluster_location()));
+                }
+            },
+            Process => {
+                let mut queue = self.model.queue.lock().unwrap();
                 queue.retain_mut(|x| if let Ready(result) = x.poll().unwrap() {
                     self.model.relm.stream().emit(Processed(result));
                     false
                 } else {
                     true
                 });
-                println!("{}", queue.len());
             }
         }
     }
@@ -430,10 +442,13 @@ impl Win {
         let model = gtk::TreeStore::new(&[gtk::Type::String, gtk::Type::String, gtk::Type::String]);
         for cluster in clusters {
             let top = model.append(None);
+            if let Some(x) = cluster.iter().find(|&&x| self.model.photos[x].location_name.is_some()){
+                model.set(&top, &[0], &[self.model.photos[*x].location_name.as_ref().unwrap()]);
+            }
             if let Some(point) = self.model.photos[cluster[0]].location {
                 model.set(&top, &[0], &[&format!("{}, {}",point.y(), point.x())]);
+                self.model.relm.stream().emit(GeoLookup(point.y(), point.x()));
             }
-            println!("Cluster located near {:?}", self.model.photos[cluster[0]].location);
             for photo in cluster {
                 let entries = model.append(&top);
                 model.set(
@@ -441,7 +456,6 @@ impl Win {
                     &[0],
                     &[&format!("{:?} ", self.model.photos[photo].path)],
                 );
-                print!("{:?} ", self.model.photos[photo].path);
             }
         }
         model
@@ -457,11 +471,9 @@ impl Win {
         let mut timedbscan = Dbscan::new(timescanner, 600.0, 10);
         let timeclusters = timedbscan.by_ref().collect::<Vec<_>>();
         for cluster in timeclusters {
-            println!("Cluster located at {:?}", timephotos[cluster[0]].0.time);
             for photo in cluster {
                 print!("{:?} ", timephotos[photo].0.path);
             }
-            println!("\n");
         }
     }
 }

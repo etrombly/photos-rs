@@ -13,7 +13,7 @@ use location_history::Location;
 #[derive(Clone, Debug)]
 pub struct Photo {
     pub path: PathBuf,
-    //pub meta: Option<Metadata>,
+    pub location_name: Option<String>,
     pub location: Option<Point<f64>>,
     pub time: Option<NaiveDateTime>,
 }
@@ -46,7 +46,7 @@ impl Photo {
         };
         Photo {
             path,
-            //meta,
+            location_name: None,
             location,
             time,
         }
