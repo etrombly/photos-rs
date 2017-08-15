@@ -40,8 +40,9 @@ use gtk::Orientation::{Vertical, Horizontal};
 use gdk::prelude::ContextExt;
 use relm::{Relm, Update, Widget};
 use relm_attributes::widget;
-use futures::Future;
-use futures::Async::Ready;
+use futures::{Future, lazy};
+use futures::future::ok;
+use futures::Async::{Ready, NotReady};
 use futures_cpupool::{CpuPool, CpuFuture};
 use serde_json::{Value, Error, Map};
 use geo::Bbox;
@@ -292,16 +293,13 @@ impl Widget for Win {
             AboutDialog => self.about_dialog(),
             Quit => gtk::main_quit(),
             GeoLookup(lat, lon) => {
-                let some_future = futures::finished::<(String, String, String), ()>(("".to_string(), 
-                                                                                    lat.to_string(), 
-                                                                                    lon.to_string()))
-                .map(|(key, lat, lon)| {
-                    let req = format!("http://locationiq.org/v1/reverse.php?format=json&zoom=13&key={}&lat={}&lon={}",
-                                    key, lat, lon);
+                let some_future = lazy(move || {
+                    let req = format!("http://locationiq.org/v1/reverse.php?format=json&zoom=13&key={:?}&lat={}&lon={:?}",
+                                    "", lat, lon);
                     let mut resp = reqwest::get(&req).unwrap();
                     let mut content = String::new();
                     resp.read_to_string(&mut content);
-                    content
+                    ok(content)
                 });
                 let mut queue = self.model.queue.lock().unwrap();
                 queue.push(self.model.pool.spawn(some_future));
@@ -321,14 +319,20 @@ impl Widget for Win {
             },
             Process => {
                 let mut queue = self.model.queue.lock().unwrap();
-                queue.retain_mut(|x| if !x.poll().is_ok() {
-                    false
-                } else if let Ready(result) = x.poll().unwrap() {
-                    self.model.relm.stream().emit(Processed(result));
-                    false
-                } else {
-                    true
-                });
+                let current = queue.pop();
+                if let Some(mut x) = current { 
+                    match x.poll() {
+                        Ok(Ready(result)) => {
+                            println!("{}", result);
+                            self.model.relm.stream().emit(Processed(result));
+                        },
+                        Ok(NotReady) => {
+                            println!("not ready");
+                            queue.push(x);
+                        },
+                        Err(_) => {},
+                    }
+                }
             }
         }
     }
