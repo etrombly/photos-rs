@@ -323,7 +323,7 @@ impl Widget for Win {
                         Request::request(lat, lon) => {
                             queue.push(Request::future(self.model.pool.spawn_fn(move || {
                                 let req = format!("http://locationiq.org/v1/reverse.php?format=json&zoom=13&key={}&lat={}&lon={}",
-                                                "94bba433ecb257", lat, lon);
+                                                "", lat, lon);
                                 let mut resp = reqwest::get(&req).unwrap();
                                 let mut content = String::new();
                                 resp.read_to_string(&mut content);
