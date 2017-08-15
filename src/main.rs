@@ -216,13 +216,18 @@ impl Widget for MyViewPort {
     }
 }
 
+pub enum Request {
+    request(String, String),
+    future(CpuFuture<String, ()>),
+}
+
 #[derive(Clone)]
 pub struct Model {
     relm: Relm<Win>,
     locations: Locations,
     photos: Vec<Photo>,
     pool: Arc<CpuPool>,
-    queue: Arc<Mutex<Vec<CpuFuture<String, ()>>>>,
+    queue: Arc<Mutex<Vec<Request>>>,
 }
 
 #[derive(Msg)]
@@ -293,16 +298,8 @@ impl Widget for Win {
             AboutDialog => self.about_dialog(),
             Quit => gtk::main_quit(),
             GeoLookup(lat, lon) => {
-                let some_future = lazy(move || {
-                    let req = format!("http://locationiq.org/v1/reverse.php?format=json&zoom=13&key={}&lat={}&lon={}",
-                                    "", lat, lon);
-                    let mut resp = reqwest::get(&req).unwrap();
-                    let mut content = String::new();
-                    resp.read_to_string(&mut content);
-                    ok(content)
-                });
                 let mut queue = self.model.queue.lock().unwrap();
-                queue.push(self.model.pool.spawn(some_future));
+                queue.push(Request::request(lat.to_string(), lon.to_string()));
             },
             Processed(result) => {
                 if let Ok(v) = serde_json::from_str::<Geo>(&result){
@@ -319,19 +316,36 @@ impl Widget for Win {
             },
             Process => {
                 let mut queue = self.model.queue.lock().unwrap();
+                println!("{}", queue.len());
                 let current = queue.pop();
-                if let Some(mut x) = current { 
-                    match x.poll() {
-                        Ok(Ready(result)) => {
-                            println!("{}", result);
-                            self.model.relm.stream().emit(Processed(result));
+                if let Some(mut x) = current {
+                    match x {
+                        Request::request(lat, lon) => {
+                            queue.push(Request::future(self.model.pool.spawn_fn(move || {
+                                let req = format!("http://locationiq.org/v1/reverse.php?format=json&zoom=13&key={}&lat={}&lon={}",
+                                                "94bba433ecb257", lat, lon);
+                                let mut resp = reqwest::get(&req).unwrap();
+                                let mut content = String::new();
+                                resp.read_to_string(&mut content);
+                                ok(content)})));
+                            return;
                         },
-                        Ok(NotReady) => {
-                            println!("not ready");
-                            queue.push(x);
+                        Request::future(ref mut y) => {
+                            match y.poll() {
+                                Ok(Ready(result)) => {
+                                    println!("{}", result);
+                                    self.model.relm.stream().emit(Processed(result));
+                                    return;
+                                },
+                                Ok(NotReady) => {
+                                    println!("not ready");
+                                    
+                                },
+                                Err(_) => { return; },
+                            }
                         },
-                        Err(_) => {},
                     }
+                    queue.push(x);
                 }
             }
         }
@@ -489,6 +503,7 @@ impl Win {
                 model.set(&top, &[0], &[self.model.photos[*x].location_name.as_ref().unwrap()]);
             } else if let Some(point) = self.model.photos[cluster[0]].location {
                 model.set(&top, &[0], &[&format!("{}, {}",point.y(), point.x())]);
+                // TODO: Fix duplicate geolookup
                 self.model.relm.stream().emit(GeoLookup(point.y(), point.x()));
             }
             for photo in cluster {
