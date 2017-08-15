@@ -294,7 +294,7 @@ impl Widget for Win {
             Quit => gtk::main_quit(),
             GeoLookup(lat, lon) => {
                 let some_future = lazy(move || {
-                    let req = format!("http://locationiq.org/v1/reverse.php?format=json&zoom=13&key={:?}&lat={}&lon={:?}",
+                    let req = format!("http://locationiq.org/v1/reverse.php?format=json&zoom=13&key={}&lat={}&lon={}",
                                     "", lat, lon);
                     let mut resp = reqwest::get(&req).unwrap();
                     let mut content = String::new();
