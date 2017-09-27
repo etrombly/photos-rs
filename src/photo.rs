@@ -1,7 +1,5 @@
 extern crate cogset;
 extern crate rexiv2;
-extern crate geo;
-extern crate location_history;
 
 use std::path::PathBuf;
 use rexiv2::Metadata;
@@ -9,13 +7,25 @@ use geo::Point;
 use geo::algorithm::haversine_distance::HaversineDistance;
 use chrono::NaiveDateTime;
 use location_history::Location;
+use futures_cpupool::CpuFuture;
+use std::rc::Rc;
+use std::cell::RefCell;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
+pub enum State {
+    None,
+    Request(String, String),
+    Future(Rc<RefCell<CpuFuture<String, ()>>>),
+    Complete,
+}
+
+#[derive(Clone)]
 pub struct Photo {
     pub path: PathBuf,
     pub location_name: Option<String>,
     pub location: Option<Point<f64>>,
     pub time: Option<NaiveDateTime>,
+    pub state: State,
 }
 
 pub struct TimePhoto<'a>(pub &'a Photo);
@@ -31,17 +41,13 @@ impl Photo {
             &None => None,
         };
         let time = match &meta {
-            &Some(ref x) => {
-                match x.get_tag_string("Exif.Image.DateTime") {
-                    Ok(y) => {
-                        match NaiveDateTime::parse_from_str(&y, "%Y:%m:%d %H:%M:%S") {
-                            Ok(z) => Some(z),
-                            Err(_) => None,
-                        }
-                    }
+            &Some(ref x) => match x.get_tag_string("Exif.Image.DateTime") {
+                Ok(y) => match NaiveDateTime::parse_from_str(&y, "%Y:%m:%d %H:%M:%S") {
+                    Ok(z) => Some(z),
                     Err(_) => None,
-                }
-            }   
+                },
+                Err(_) => None,
+            },
             &None => None,
         };
         Photo {
@@ -49,6 +55,7 @@ impl Photo {
             location_name: None,
             location,
             time,
+            state: State::None,
         }
     }
 
@@ -68,12 +75,10 @@ impl cogset::Point for Photo {
     fn dist(&self, other: &Photo) -> f64 {
         // returning MAX isn't really correct, but shouldn't throw off the clustering
         match self.location {
-            Some(x) => {
-                match other.location {
-                    Some(y) => x.haversine_distance(&y),
-                    None => ::std::f64::MAX,
-                }
-            }
+            Some(x) => match other.location {
+                Some(y) => x.haversine_distance(&y),
+                None => ::std::f64::MAX,
+            },
             None => ::std::f64::MAX,
         }
     }
@@ -82,12 +87,10 @@ impl cogset::Point for Photo {
 impl<'a> cogset::Point for TimePhoto<'a> {
     fn dist(&self, other: &TimePhoto) -> f64 {
         match self.0.time {
-            Some(x) => {
-                match other.0.time {
-                    Some(y) => ((x.timestamp() - y.timestamp()) as f64).abs(),
-                    None => ::std::f64::MAX,
-                }
-            }
+            Some(x) => match other.0.time {
+                Some(y) => ((x.timestamp() - y.timestamp()) as f64).abs(),
+                None => ::std::f64::MAX,
+            },
             None => ::std::f64::MAX,
         }
     }

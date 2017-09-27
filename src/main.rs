@@ -2,64 +2,65 @@
 #![windows_subsystem = "windows"]
 
 extern crate chrono;
-extern crate rexiv2;
-extern crate location_history;
-extern crate geo;
 extern crate cogset;
-extern crate walkdir;
-extern crate gtk;
+extern crate futures;
+extern crate futures_cpupool;
 extern crate gdk;
 extern crate gdk_pixbuf;
-extern crate odds;
+extern crate geo;
+extern crate gtk;
+extern crate location_history;
 #[macro_use]
 extern crate relm;
 extern crate relm_attributes;
 #[macro_use]
 extern crate relm_derive;
-extern crate futures;
-extern crate futures_cpupool;
 extern crate reqwest;
+extern crate rexiv2;
+extern crate serde;
 #[macro_use]
 extern crate serde_derive;
-extern crate serde;
 extern crate serde_json;
+extern crate walkdir;
 
 use rexiv2::Metadata;
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use odds::vec::VecExt;
+use std::sync::Arc;
+use std::collections::HashMap;
 use location_history::{Locations, LocationsExt};
-use cogset::{Dbscan, BruteScan};
+use cogset::{BruteScan, Dbscan};
 use walkdir::WalkDir;
-use gtk::{BoxExt, CellLayoutExt, ContainerExt, FileChooserDialog, FileChooserExt, DialogExt,
-          Inhibit, Menu, MenuBar, MenuItem, MenuItemExt, MenuShellExt, OrientableExt,
-          ScrolledWindowExt, TreeView, Viewport, WidgetExt, WindowExt};
-use gtk::Orientation::{Vertical, Horizontal};
+use gtk::{AboutDialogExt, BoxExt, CellLayoutExt, ContainerExt, DialogExt, FileChooserDialog,
+          FileChooserExt, FileFilterExt, Inhibit, LabelExt, Menu, MenuBar, MenuItem, MenuItemExt,
+          MenuShellExt, OrientableExt, ScrolledWindowExt, TreeStoreExt, TreeStoreExtManual,
+          TreeView, TreeViewColumnExt, TreeViewExt, Viewport, WidgetExt, WindowExt};
+use gtk::Orientation::{Horizontal, Vertical};
 use gdk::prelude::ContextExt;
 use relm::{Relm, Update, Widget};
 use relm_attributes::widget;
-use futures::{Future, lazy};
+use futures::Future;
 use futures::future::ok;
-use futures::Async::{Ready, NotReady};
-use futures_cpupool::{CpuPool, CpuFuture};
-use serde_json::{Value, Error, Map};
-use geo::Bbox;
+use futures::Async::{NotReady, Ready};
+use futures_cpupool::CpuPool;
+use serde_json::Value;
+use geo::{Bbox, Point};
 use geo::contains::Contains;
+use std::rc::Rc;
+use std::cell::RefCell;
 
 mod photo;
 
-use photo::{Photo, TimePhoto};
+use photo::{Photo, TimePhoto, State};
 use self::Msg::*;
 use self::ViewMsg::*;
 use self::MenuMsg::*;
 
 #[derive(Deserialize, Debug)]
 struct Geo {
-    address: Map<String, Value>,
-    #[serde(deserialize_with = "parse_bbox")]
-    boundingbox: Bbox<f64>,
+    address: Address,
+    #[serde(deserialize_with = "parse_bbox")] boundingbox: Bbox<f64>,
 }
 
 fn parse_bbox<'de, D>(de: D) -> Result<Bbox<f64>, D::Error>
@@ -68,15 +69,29 @@ where
 {
     let deser_result: serde_json::Value = try!(serde::Deserialize::deserialize(de));
     match deser_result {
-        serde_json::Value::Array(ref s) => {
-            Ok(Bbox {
-                xmin: s[2].as_str().unwrap().parse::<f64>().unwrap(),
-                xmax: s[3].as_str().unwrap().parse::<f64>().unwrap(),
-                ymin: s[0].as_str().unwrap().parse::<f64>().unwrap(),
-                ymax: s[1].as_str().unwrap().parse::<f64>().unwrap(),
-            })
-        }
+        serde_json::Value::Array(ref s) => Ok(Bbox {
+            xmin: s[2].as_str().unwrap().parse::<f64>().unwrap(),
+            xmax: s[3].as_str().unwrap().parse::<f64>().unwrap(),
+            ymin: s[0].as_str().unwrap().parse::<f64>().unwrap(),
+            ymax: s[1].as_str().unwrap().parse::<f64>().unwrap(),
+        }),
         _ => Err(serde::de::Error::custom("Unexpected value")),
+    }
+}
+
+type Address = HashMap<String, Value>;
+
+trait AddressExt {
+    fn get_place(&self) -> String;
+}
+
+impl AddressExt for Address {
+    fn get_place(&self) -> String {
+        if self.contains_key("city") {
+            self["city"].as_str().unwrap().to_owned()
+        } else {
+            "".to_string()
+        }
     }
 }
 
@@ -216,18 +231,12 @@ impl Widget for MyViewPort {
     }
 }
 
-pub enum Request {
-    request(String, String),
-    future(CpuFuture<String, ()>),
-}
-
-#[derive(Clone)]
+//#[derive(Clone)]
 pub struct Model {
     relm: Relm<Win>,
     locations: Locations,
     photos: Vec<Photo>,
     pool: Arc<CpuPool>,
-    queue: Arc<Mutex<Vec<Request>>>,
 }
 
 #[derive(Msg)]
@@ -236,7 +245,6 @@ pub enum Msg {
     FolderDialog,
     AboutDialog,
     Quit,
-    GeoLookup(f64, f64),
     Processed(String),
     Process,
 }
@@ -274,7 +282,6 @@ impl Widget for Win {
             locations: Vec::new(),
             photos: Vec::new(),
             pool: Arc::new(CpuPool::new_num_cpus()),
-            queue: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -297,55 +304,67 @@ impl Widget for Win {
             }
             AboutDialog => self.about_dialog(),
             Quit => gtk::main_quit(),
-            GeoLookup(lat, lon) => {
-                let mut queue = self.model.queue.lock().unwrap();
-                queue.push(Request::request(lat.to_string(), lon.to_string()));
-            },
-            Processed(result) => {
-                if let Ok(v) = serde_json::from_str::<Geo>(&result){
-                    println!("{:?}\n{:?}\n", v.address["country"], v.boundingbox);
-                    for photo in self.model.photos.iter_mut() {
-                        if let Some(location) = photo.location {
-                            if v.boundingbox.contains(&location){
-                                photo.location_name = Some(v.address["country"].as_str().unwrap().to_owned());
-                            }
-                        } 
+            Processed(result) => if let Ok(v) = serde_json::from_str::<Geo>(&result) {
+                //println!("{:?}\n{:?}\n", v.address["country"], v.boundingbox);
+                for photo in self.model.photos.iter_mut() {
+                    if let Some(location) = photo.location {
+                        if v.boundingbox.contains(&location) {
+                            photo.location_name = Some(format!(
+                                "{}, {}",
+                                v.address.get_place(),
+                                v.address["country"].as_str().unwrap().to_owned()
+                            ));
+                            photo.state = State::Complete;
+                        }
                     }
-                    self.view.emit(UpdateView(self.cluster_location()));
                 }
+                self.view.emit(UpdateView(self.cluster_location()));
             },
             Process => {
-                let mut queue = self.model.queue.lock().unwrap();
-                println!("{}", queue.len());
-                let current = queue.pop();
-                if let Some(mut x) = current {
-                    match x {
-                        Request::request(lat, lon) => {
-                            queue.push(Request::future(self.model.pool.spawn_fn(move || {
-                                let req = format!("http://locationiq.org/v1/reverse.php?format=json&zoom=13&key={}&lat={}&lon={}",
+                for photo in self.model.photos.iter_mut() {
+                    let state = photo.state.clone();
+                    match state {
+                        State::None => {
+                            if let Some(point) = photo.location {
+                                photo.state = State::Request(point.y().to_string(), point.x().to_string())
+                            }
+                        }
+                        State::Request(ref lat, ref lon) => {
+                            let lat = lat.clone();
+                            let lon = lon.clone();
+                            photo.state = State::Future(Rc::new(RefCell::new(self.model.pool.spawn_fn(move || {
+                                let req = format!("http://locationiq.org/v1/reverse.php?format=json&zoom=11&key={}&lat={}&lon={}",
                                                 "", lat, lon);
-                                let mut resp = reqwest::get(&req).unwrap();
-                                let mut content = String::new();
-                                resp.read_to_string(&mut content);
-                                ok(content)})));
+                                if let Ok(mut resp) = reqwest::get(&req) {
+                                    let mut content = String::new();
+                                    resp.read_to_string(&mut content);
+                                    ok(content)
+                                } else {
+                                    // TODO: This should be an error
+                                    ok("".to_string())
+                                }}))));
                             return;
                         },
-                        Request::future(ref mut y) => {
+                        State::Future(y) => {
+                            let y = y.clone();
+                            let mut y = y.borrow_mut();
                             match y.poll() {
                                 Ok(Ready(result)) => {
-                                    println!("{}", result);
+                                    //println!("{}", result);
                                     self.model.relm.stream().emit(Processed(result));
-                                    return;
-                                },
+                                    photo.state = State::Complete;
+                                }
                                 Ok(NotReady) => {
                                     println!("not ready");
-                                    
-                                },
-                                Err(_) => { return; },
+                                }
+                                Err(_) => {
+                                    println!("Error processing future");
+                                }
                             }
+                            
                         },
+                        _ => {},
                     }
-                    queue.push(x);
                 }
             }
         }
@@ -499,12 +518,17 @@ impl Win {
         let model = gtk::TreeStore::new(&[gtk::Type::String, gtk::Type::String, gtk::Type::String]);
         for cluster in clusters {
             let top = model.append(None);
-            if let Some(x) = cluster.iter().find(|&&x| self.model.photos[x].location_name.is_some()){
-                model.set(&top, &[0], &[self.model.photos[*x].location_name.as_ref().unwrap()]);
+            if let Some(x) = cluster
+                .iter()
+                .find(|&&x| self.model.photos[x].location_name.is_some())
+            {
+                model.set(
+                    &top,
+                    &[0],
+                    &[self.model.photos[*x].location_name.as_ref().unwrap()],
+                );
             } else if let Some(point) = self.model.photos[cluster[0]].location {
-                model.set(&top, &[0], &[&format!("{}, {}",point.y(), point.x())]);
-                // TODO: Fix duplicate geolookup
-                self.model.relm.stream().emit(GeoLookup(point.y(), point.x()));
+                model.set(&top, &[0], &[&format!("{}, {}", point.y(), point.x())]);
             }
             for photo in cluster {
                 let entries = model.append(&top);
