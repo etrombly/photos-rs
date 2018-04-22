@@ -1,4 +1,4 @@
-#![feature(conservative_impl_trait, proc_macro, unboxed_closures)]
+#![feature(proc_macro, unboxed_closures)]
 #![windows_subsystem = "windows"]
 
 extern crate chrono;
@@ -34,10 +34,11 @@ use cogset::{BruteScan, Dbscan};
 use walkdir::WalkDir;
 use gtk::{AboutDialogExt, BoxExt, CellLayoutExt, ContainerExt, DialogExt, FileChooserDialog,
           FileChooserExt, FileFilterExt, Inhibit, LabelExt, Menu, MenuBar, MenuItem, MenuItemExt,
-          MenuShellExt, OrientableExt, ScrolledWindowExt, TreeStoreExt, TreeStoreExtManual,
-          TreeView, TreeViewColumnExt, TreeViewExt, Viewport, WidgetExt, WindowExt};
+          MenuShellExt, OrientableExt, PackType, ScrolledWindowExt, TreeStoreExt, TreeStoreExtManual,
+          TreeView, TreeViewColumnExt, TreeViewExt, Viewport, WidgetExt, GtkWindowExt};
 use gtk::Orientation::{Horizontal, Vertical};
 use gdk::prelude::ContextExt;
+use gdk_pixbuf::PixbufExt;
 use relm::{Relm, Update, Widget};
 use relm_attributes::widget;
 use futures::Future;
@@ -252,6 +253,9 @@ pub enum Msg {
 #[widget]
 impl Widget for Win {
     fn init_view(&mut self) {
+        self.root_box.set_child_packing(&self.main_box, true, false, 0, PackType::Start);
+        self.main_box.set_child_packing(&self.map, true, false, 0, PackType::Start);
+        self.main_box.set_child_packing(&self.view_window, true, true, 0, PackType::Start);
         self.map.connect_draw(move |widget, context| {
             let width = widget.get_allocated_width() as f64;
             let height = widget.get_allocated_height() as f64;
@@ -333,8 +337,8 @@ impl Widget for Win {
                             let lat = lat.clone();
                             let lon = lon.clone();
                             photo.state = State::Future(Rc::new(RefCell::new(self.model.pool.spawn_fn(move || {
-                                let req = format!("http://locationiq.org/v1/reverse.php?format=json&zoom=11&key={}&lat={}&lon={}",
-                                                "", lat, lon);
+                                let req = format!("http://locationiq.org/v1/reverse.php?format=json&accept-language=en&zoom=11&key={}&lat={}&lon={}",
+                                                "94bba433ecb257", lat, lon);
                                 if let Ok(mut resp) = reqwest::get(&req) {
                                     let mut content = String::new();
                                     resp.read_to_string(&mut content);
@@ -374,6 +378,7 @@ impl Widget for Win {
         #[name="root"]
         gtk::Window {
             title: "Photos-rs",
+            #[name="root_box"]
             gtk::Box {
                 // Set the orientation property of the Box.
                 orientation: Vertical,
@@ -383,28 +388,19 @@ impl Widget for Win {
                     MenuAbout => AboutDialog,
                     MenuQuit => Quit,
                 },
+                #[name="main_box"]
                 gtk::Box {
-                    packing: {
-                                expand: true,
-                    },
                     orientation: Horizontal,
                     #[name="map"]
-                    gtk::DrawingArea {
-                        packing: {
-                                expand: true,
-                        },
-                    },
-                    gtk::Box{
+                    gtk::DrawingArea {},
+                    gtk::Box {
                         orientation: Vertical,
                         gtk::Label {
                             text: "Clusters",
                         },
+                        #[name="view_window"]
                         gtk::ScrolledWindow {
                             property_hscrollbar_policy: gtk::PolicyType::Never,
-                            packing: {
-                                expand: true,
-                                fill: true,
-                            },
                             #[name="view"]
                             MyViewPort,
                         },
