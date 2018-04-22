@@ -3,8 +3,6 @@
 
 extern crate chrono;
 extern crate cogset;
-extern crate futures;
-extern crate futures_cpupool;
 extern crate gdk;
 extern crate gdk_pixbuf;
 extern crate geo;
@@ -15,7 +13,6 @@ extern crate relm;
 extern crate relm_attributes;
 #[macro_use]
 extern crate relm_derive;
-extern crate reqwest;
 extern crate rexiv2;
 extern crate serde;
 #[macro_use]
@@ -28,7 +25,6 @@ use rexiv2::Metadata;
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::collections::HashMap;
 use location_history::{Locations, LocationsExt};
 use cogset::{BruteScan, Dbscan};
@@ -42,20 +38,14 @@ use gdk::prelude::ContextExt;
 use gdk_pixbuf::PixbufExt;
 use relm::{Relm, Update, Widget};
 use relm_attributes::widget;
-use futures::Future;
-use futures::future::ok;
-use futures::Async::{NotReady, Ready};
-use futures_cpupool::CpuPool;
 use rgeo::search;
 use serde_json::Value;
 use geo::{Bbox, Point};
 use geo::contains::Contains;
-use std::rc::Rc;
-use std::cell::RefCell;
 
 mod photo;
 
-use photo::{Photo, TimePhoto, State};
+use photo::{Photo, TimePhoto};
 use self::Msg::*;
 use self::ViewMsg::*;
 use self::MenuMsg::*;
@@ -236,10 +226,8 @@ impl Widget for MyViewPort {
 
 //#[derive(Clone)]
 pub struct Model {
-    relm: Relm<Win>,
     locations: Locations,
     photos: Vec<Photo>,
-    pool: Arc<CpuPool>,
 }
 
 #[derive(Msg)]
@@ -248,7 +236,6 @@ pub enum Msg {
     FolderDialog,
     AboutDialog,
     Quit,
-    Processed(String),
 }
 
 #[widget]
@@ -275,20 +262,13 @@ impl Widget for Win {
             context.paint();
             return Inhibit(false);
         });
-        let relm = self.model.relm.clone();
-        //gtk::timeout_add_seconds(1, move || {
-        //    relm.stream().emit(Process);
-        //    gtk::Continue(true)
-        //});
     }
 
     // The initial model.
-    fn model(relm: &Relm<Self>, _: ()) -> Model {
+    fn model() -> Model {
         Model {
-            relm: relm.clone(),
             locations: Vec::new(),
             photos: Vec::new(),
-            pool: Arc::new(CpuPool::new_num_cpus()),
         }
     }
 
@@ -311,22 +291,6 @@ impl Widget for Win {
             }
             AboutDialog => self.about_dialog(),
             Quit => gtk::main_quit(),
-            Processed(result) => if let Ok(v) = serde_json::from_str::<Geo>(&result) {
-                //println!("{:?}\n{:?}\n", v.address["country"], v.boundingbox);
-                for photo in self.model.photos.iter_mut() {
-                    if let Some(location) = photo.location {
-                        if v.boundingbox.contains(&location) {
-                            photo.location_name = Some(format!(
-                                "{}, {}",
-                                v.address.get_place(),
-                                v.address["country"].as_str().unwrap().to_owned()
-                            ));
-                            photo.state = State::Complete;
-                        }
-                    }
-                }
-                self.view.emit(UpdateView(self.cluster_location()));
-            }
         }
     }
 
@@ -438,7 +402,6 @@ impl Win {
         while gtk::events_pending() {
             gtk::main_iteration_do(false);
         }
-        println!("Scanning photos");
         let files = WalkDir::new(path).into_iter().filter_map(|e| e.ok());
         let files = files.filter(|x| Metadata::new_from_path(x.path()).is_ok());
         files.map(|x| Photo::new(x.path().to_path_buf())).collect()
@@ -450,13 +413,6 @@ impl Win {
                 if let Some(time) = photo.time {
                     println!("  Date: {:?}", time);
                     if let Some(closest) = self.model.locations.find_closest(time) {
-                        println!(
-                            "  closest timestamp: {:?} long: {} lat: {} accuracy: {}",
-                            closest.timestamp,
-                            closest.longitude,
-                            closest.latitude,
-                            closest.accuracy
-                        );
                         photo.set_location(closest);
                     }
                 }
@@ -506,11 +462,6 @@ impl Win {
         let timescanner = BruteScan::new(&timephotos);
         let mut timedbscan = Dbscan::new(timescanner, 600.0, 10);
         let timeclusters = timedbscan.by_ref().collect::<Vec<_>>();
-        for cluster in timeclusters {
-            for photo in cluster {
-                print!("{:?} ", timephotos[photo].0.path);
-            }
-        }
     }
 }
 

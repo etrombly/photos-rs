@@ -7,25 +7,12 @@ use geo::Point;
 use geo::algorithm::haversine_distance::HaversineDistance;
 use chrono::NaiveDateTime;
 use location_history::Location;
-use futures_cpupool::CpuFuture;
-use std::rc::Rc;
-use std::cell::RefCell;
 
-#[derive(Clone)]
-pub enum State {
-    None,
-    Request(String, String),
-    Future(Rc<RefCell<CpuFuture<String, ()>>>),
-    Complete,
-}
-
-#[derive(Clone)]
 pub struct Photo {
     pub path: PathBuf,
     pub location_name: Option<String>,
     pub location: Option<Point<f64>>,
     pub time: Option<NaiveDateTime>,
-    pub state: State,
 }
 
 pub struct TimePhoto<'a>(pub &'a Photo);
@@ -55,7 +42,6 @@ impl Photo {
             location_name: None,
             location,
             time,
-            state: State::None,
         }
     }
 
