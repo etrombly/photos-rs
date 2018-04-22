@@ -14,17 +14,12 @@ extern crate relm_attributes;
 #[macro_use]
 extern crate relm_derive;
 extern crate rexiv2;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
 extern crate rgeo;
-extern crate serde_json;
 extern crate walkdir;
 
 use cogset::{BruteScan, Dbscan};
 use gdk::prelude::ContextExt;
 use gdk_pixbuf::PixbufExt;
-use geo::Bbox;
 use gtk::Orientation::{Horizontal, Vertical};
 use gtk::{AboutDialogExt, BoxExt, CellLayoutExt, ContainerExt, DialogExt, FileChooserDialog,
           FileChooserExt, FileFilterExt, GtkWindowExt, Inhibit, LabelExt, Menu, MenuBar, MenuItem,
@@ -35,8 +30,6 @@ use relm::{Relm, Update, Widget};
 use relm_attributes::widget;
 use rexiv2::Metadata;
 use rgeo::search;
-use serde_json::Value;
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
@@ -48,45 +41,6 @@ use self::MenuMsg::*;
 use self::Msg::*;
 use self::ViewMsg::*;
 use photo::{Photo, TimePhoto};
-
-#[derive(Deserialize, Debug)]
-struct Geo {
-    address: Address,
-    #[serde(deserialize_with = "parse_bbox")]
-    boundingbox: Bbox<f64>,
-}
-
-fn parse_bbox<'de, D>(de: D) -> Result<Bbox<f64>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let deser_result: serde_json::Value = try!(serde::Deserialize::deserialize(de));
-    match deser_result {
-        serde_json::Value::Array(ref s) => Ok(Bbox {
-            xmin: s[2].as_str().unwrap().parse::<f64>().unwrap(),
-            xmax: s[3].as_str().unwrap().parse::<f64>().unwrap(),
-            ymin: s[0].as_str().unwrap().parse::<f64>().unwrap(),
-            ymax: s[1].as_str().unwrap().parse::<f64>().unwrap(),
-        }),
-        _ => Err(serde::de::Error::custom("Unexpected value")),
-    }
-}
-
-type Address = HashMap<String, Value>;
-
-trait AddressExt {
-    fn get_place(&self) -> String;
-}
-
-impl AddressExt for Address {
-    fn get_place(&self) -> String {
-        if self.contains_key("city") {
-            self["city"].as_str().unwrap().to_owned()
-        } else {
-            "".to_string()
-        }
-    }
-}
 
 // The messages that can be sent to the update function.
 #[derive(Msg)]
