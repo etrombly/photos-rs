@@ -17,43 +17,43 @@ extern crate rexiv2;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
+extern crate rgeo;
 extern crate serde_json;
 extern crate walkdir;
-extern crate rgeo;
 
+use cogset::{BruteScan, Dbscan};
+use gdk::prelude::ContextExt;
+use gdk_pixbuf::PixbufExt;
+use geo::Bbox;
+use gtk::Orientation::{Horizontal, Vertical};
+use gtk::{AboutDialogExt, BoxExt, CellLayoutExt, ContainerExt, DialogExt, FileChooserDialog,
+          FileChooserExt, FileFilterExt, GtkWindowExt, Inhibit, LabelExt, Menu, MenuBar, MenuItem,
+          MenuItemExt, MenuShellExt, OrientableExt, PackType, ScrolledWindowExt, TreeStoreExt,
+          TreeStoreExtManual, TreeView, TreeViewColumnExt, TreeViewExt, Viewport, WidgetExt};
+use location_history::{Locations, LocationsExt};
+use relm::{Relm, Update, Widget};
+use relm_attributes::widget;
 use rexiv2::Metadata;
+use rgeo::search;
+use serde_json::Value;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
-use std::collections::HashMap;
-use location_history::{Locations, LocationsExt};
-use cogset::{BruteScan, Dbscan};
 use walkdir::WalkDir;
-use gtk::{AboutDialogExt, BoxExt, CellLayoutExt, ContainerExt, DialogExt, FileChooserDialog,
-          FileChooserExt, FileFilterExt, Inhibit, LabelExt, Menu, MenuBar, MenuItem, MenuItemExt,
-          MenuShellExt, OrientableExt, PackType, ScrolledWindowExt, TreeStoreExt, TreeStoreExtManual,
-          TreeView, TreeViewColumnExt, TreeViewExt, Viewport, WidgetExt, GtkWindowExt};
-use gtk::Orientation::{Horizontal, Vertical};
-use gdk::prelude::ContextExt;
-use gdk_pixbuf::PixbufExt;
-use relm::{Relm, Update, Widget};
-use relm_attributes::widget;
-use rgeo::search;
-use serde_json::Value;
-use geo::{Bbox, Point};
-use geo::contains::Contains;
 
 mod photo;
 
-use photo::{Photo, TimePhoto};
+use self::MenuMsg::*;
 use self::Msg::*;
 use self::ViewMsg::*;
-use self::MenuMsg::*;
+use photo::{Photo, TimePhoto};
 
 #[derive(Deserialize, Debug)]
 struct Geo {
     address: Address,
-    #[serde(deserialize_with = "parse_bbox")] boundingbox: Bbox<f64>,
+    #[serde(deserialize_with = "parse_bbox")]
+    boundingbox: Bbox<f64>,
 }
 
 fn parse_bbox<'de, D>(de: D) -> Result<Bbox<f64>, D::Error>
@@ -142,7 +142,6 @@ impl Widget for MyMenuBar {
         menu_file.append(&file_item);
         menu_file.append(&quit);
         file.set_submenu(Some(&menu_file));
-
 
         menu_help.append(&about);
         help.set_submenu(&menu_help);
@@ -241,10 +240,14 @@ pub enum Msg {
 #[widget]
 impl Widget for Win {
     fn init_view(&mut self) {
-        self.root_box.set_child_packing(&self.main_box, true, true, 0, PackType::Start);
-        self.main_box.set_child_packing(&self.map, true, true, 0, PackType::Start);
-        self.main_box.set_child_packing(&self.scroll_box, false, true, 0, PackType::End);
-        self.scroll_box.set_child_packing(&self.scroll_window, true, true, 0, PackType::Start);
+        self.root_box
+            .set_child_packing(&self.main_box, true, true, 0, PackType::Start);
+        self.main_box
+            .set_child_packing(&self.map, true, true, 0, PackType::Start);
+        self.main_box
+            .set_child_packing(&self.scroll_box, false, true, 0, PackType::End);
+        self.scroll_box
+            .set_child_packing(&self.scroll_window, true, true, 0, PackType::Start);
 
         self.map.connect_draw(move |widget, context| {
             let width = widget.get_allocated_width() as f64;
@@ -408,10 +411,9 @@ impl Win {
     }
 
     fn update_locations(&mut self) {
-        for photo in self.model.photos.iter_mut() {
+        for photo in &mut self.model.photos {
             if photo.location == None {
                 if let Some(time) = photo.time {
-                    println!("  Date: {:?}", time);
                     if let Some(closest) = self.model.locations.find_closest(time) {
                         photo.set_location(closest);
                     }
@@ -461,7 +463,7 @@ impl Win {
             .collect::<Vec<_>>();
         let timescanner = BruteScan::new(&timephotos);
         let mut timedbscan = Dbscan::new(timescanner, 600.0, 10);
-        let timeclusters = timedbscan.by_ref().collect::<Vec<_>>();
+        let _timeclusters = timedbscan.by_ref().collect::<Vec<_>>();
     }
 }
 

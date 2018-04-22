@@ -1,12 +1,12 @@
 extern crate cogset;
 extern crate rexiv2;
 
-use std::path::PathBuf;
-use rexiv2::Metadata;
-use geo::Point;
-use geo::algorithm::haversine_distance::HaversineDistance;
 use chrono::NaiveDateTime;
+use geo::algorithm::haversine_distance::HaversineDistance;
+use geo::Point;
 use location_history::Location;
+use rexiv2::Metadata;
+use std::path::PathBuf;
 
 pub struct Photo {
     pub path: PathBuf,
@@ -23,19 +23,19 @@ impl Photo {
             Ok(x) => Some(x),
             Err(_) => None,
         };
-        let location = match &meta {
-            &Some(ref x) => Photo::gps_to_point(x.get_gps_info()),
-            &None => None,
+        let location = match meta {
+            Some(ref x) => Photo::gps_to_point(x.get_gps_info()),
+            None => None,
         };
-        let time = match &meta {
-            &Some(ref x) => match x.get_tag_string("Exif.Image.DateTime") {
+        let time = match meta {
+            Some(ref x) => match x.get_tag_string("Exif.Image.DateTime") {
                 Ok(y) => match NaiveDateTime::parse_from_str(&y, "%Y:%m:%d %H:%M:%S") {
                     Ok(z) => Some(z),
                     Err(_) => None,
                 },
                 Err(_) => None,
             },
-            &None => None,
+            None => None,
         };
         Photo {
             path,
