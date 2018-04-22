@@ -22,6 +22,7 @@ extern crate serde;
 extern crate serde_derive;
 extern crate serde_json;
 extern crate walkdir;
+extern crate rgeo;
 
 use rexiv2::Metadata;
 use std::fs::File;
@@ -45,6 +46,7 @@ use futures::Future;
 use futures::future::ok;
 use futures::Async::{NotReady, Ready};
 use futures_cpupool::CpuPool;
+use rgeo::search;
 use serde_json::Value;
 use geo::{Bbox, Point};
 use geo::contains::Contains;
@@ -247,15 +249,16 @@ pub enum Msg {
     AboutDialog,
     Quit,
     Processed(String),
-    Process,
 }
 
 #[widget]
 impl Widget for Win {
     fn init_view(&mut self) {
-        self.root_box.set_child_packing(&self.main_box, true, false, 0, PackType::Start);
-        self.main_box.set_child_packing(&self.map, true, false, 0, PackType::Start);
-        self.main_box.set_child_packing(&self.view_window, true, true, 0, PackType::Start);
+        self.root_box.set_child_packing(&self.main_box, true, true, 0, PackType::Start);
+        self.main_box.set_child_packing(&self.map, true, true, 0, PackType::Start);
+        self.main_box.set_child_packing(&self.scroll_box, false, true, 0, PackType::End);
+        self.scroll_box.set_child_packing(&self.scroll_window, true, true, 0, PackType::Start);
+
         self.map.connect_draw(move |widget, context| {
             let width = widget.get_allocated_width() as f64;
             let height = widget.get_allocated_height() as f64;
@@ -273,10 +276,10 @@ impl Widget for Win {
             return Inhibit(false);
         });
         let relm = self.model.relm.clone();
-        gtk::timeout_add_seconds(1, move || {
-            relm.stream().emit(Process);
-            gtk::Continue(true)
-        });
+        //gtk::timeout_add_seconds(1, move || {
+        //    relm.stream().emit(Process);
+        //    gtk::Continue(true)
+        //});
     }
 
     // The initial model.
@@ -323,53 +326,6 @@ impl Widget for Win {
                     }
                 }
                 self.view.emit(UpdateView(self.cluster_location()));
-            },
-            Process => {
-                for photo in self.model.photos.iter_mut() {
-                    let state = photo.state.clone();
-                    match state {
-                        State::None => {
-                            if let Some(point) = photo.location {
-                                photo.state = State::Request(point.y().to_string(), point.x().to_string())
-                            }
-                        }
-                        State::Request(ref lat, ref lon) => {
-                            let lat = lat.clone();
-                            let lon = lon.clone();
-                            photo.state = State::Future(Rc::new(RefCell::new(self.model.pool.spawn_fn(move || {
-                                let req = format!("http://locationiq.org/v1/reverse.php?format=json&accept-language=en&zoom=11&key={}&lat={}&lon={}",
-                                                "94bba433ecb257", lat, lon);
-                                if let Ok(mut resp) = reqwest::get(&req) {
-                                    let mut content = String::new();
-                                    resp.read_to_string(&mut content);
-                                    ok(content)
-                                } else {
-                                    // TODO: This should be an error
-                                    ok("".to_string())
-                                }}))));
-                            return;
-                        },
-                        State::Future(y) => {
-                            let y = y.clone();
-                            let mut y = y.borrow_mut();
-                            match y.poll() {
-                                Ok(Ready(result)) => {
-                                    //println!("{}", result);
-                                    self.model.relm.stream().emit(Processed(result));
-                                    photo.state = State::Complete;
-                                }
-                                Ok(NotReady) => {
-                                    println!("not ready");
-                                }
-                                Err(_) => {
-                                    println!("Error processing future");
-                                }
-                            }
-                            
-                        },
-                        _ => {},
-                    }
-                }
             }
         }
     }
@@ -393,12 +349,13 @@ impl Widget for Win {
                     orientation: Horizontal,
                     #[name="map"]
                     gtk::DrawingArea {},
+                    #[name="scroll_box"]
                     gtk::Box {
                         orientation: Vertical,
                         gtk::Label {
                             text: "Clusters",
                         },
-                        #[name="view_window"]
+                        #[name="scroll_window"]
                         gtk::ScrolledWindow {
                             property_hscrollbar_policy: gtk::PolicyType::Never,
                             #[name="view"]
@@ -524,7 +481,9 @@ impl Win {
                     &[self.model.photos[*x].location_name.as_ref().unwrap()],
                 );
             } else if let Some(point) = self.model.photos[cluster[0]].location {
-                model.set(&top, &[0], &[&format!("{}, {}", point.y(), point.x())]);
+                if let Some(loc) = search(point.y(), point.x()) {
+                    model.set(&top, &[0], &[&format!("{}, {}", loc.1.name, loc.1.country)]);
+                }
             }
             for photo in cluster {
                 let entries = model.append(&top);

@@ -31,5 +31,8 @@ version = "0.4.2"
 [dependencies.location_history]
 git = "https://github.com/etrombly/location_history"
 
+[dependencies.rgeo]
+git = "https://github.com/etrombly/rgeo"
+
 [profile.release]
 lto = true
