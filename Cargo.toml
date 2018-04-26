@@ -19,13 +19,11 @@ rexiv2 = "0.6.0"
 walkdir = "2.1.4"
 rgeo = "^0.1"
 location_history = "^0.1"
+osmgpsmap = "^0.2"
 
 [dependencies.chrono]
 features = ["serde"]
 version = "0.4.2"
-
-[dependencies.osmgpsmap]
-path = "../osmgpsmap-rs"
 
 [profile.release]
 lto = true

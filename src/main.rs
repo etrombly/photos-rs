@@ -194,7 +194,9 @@ impl Update for MyMap {
     fn update(&mut self, event: MapMsg) {
         match event {
             MarkLocation(lat, long) => {
+                // TODO: check if this can just be loaded once and reused
                 let pointer = gdk_pixbuf::Pixbuf::new_from_file("src/resources/pointer.svg").unwrap();
+                // TODO: add these to a vector or something to track them
                 self.map.image_add(lat as f32, long as f32, &pointer);
             }
         }
