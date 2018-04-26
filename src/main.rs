@@ -19,7 +19,7 @@ extern crate walkdir;
 extern crate osmgpsmap;
 
 use cogset::{BruteScan, Dbscan};
-use gdk_pixbuf::PixbufExt;
+use gdk_pixbuf::{Pixbuf, PixbufExt};
 use gtk::Orientation::{Horizontal, Vertical};
 use gtk::{AboutDialogExt, BoxExt, CellLayoutExt, ContainerExt, DialogExt, FileChooserDialog,
           FileChooserExt, FileFilterExt, GtkWindowExt, Inhibit, LabelExt, Menu, MenuBar, MenuItem,
@@ -41,6 +41,7 @@ mod photo;
 use self::MenuMsg::*;
 use self::Msg::*;
 use self::ViewMsg::*;
+use self::MapMsg::*;
 use photo::{Photo, TimePhoto};
 
 // The messages that can be sent to the update function.
@@ -178,14 +179,26 @@ impl Widget for MyViewPort {
     }
 }
 
+#[derive(Msg)]
+pub enum MapMsg {
+    MarkLocation(f64, f64),
+}
+
 impl Update for MyMap {
     type Model = ();
     type ModelParam = ();
-    type Msg = ();
+    type Msg = MapMsg;
 
     fn model(_: &Relm<Self>, _: ()) {}
 
-    fn update(&mut self, _event: ()) {}
+    fn update(&mut self, event: MapMsg) {
+        match event {
+            MarkLocation(lat, long) => {
+                let pointer = gdk_pixbuf::Pixbuf::new_from_file("src/resources/pointer.svg").unwrap();
+                self.map.image_add(lat as f32, long as f32, &pointer);
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -228,27 +241,6 @@ pub enum Msg {
 
 #[widget]
 impl Widget for Win {
-    fn init_view(&mut self) {
-        /*
-        self.map.connect_draw(move |widget, context| {
-            let width = widget.get_allocated_width() as f64;
-            let height = widget.get_allocated_height() as f64;
-            let pix = gdk_pixbuf::Pixbuf::new_from_file("src/map.png").unwrap();
-            let width_scale = width / pix.get_width() as f64;
-            let height_scale = height / pix.get_height() as f64;
-            let scale = if width_scale < height_scale {
-                width_scale
-            } else {
-                height_scale
-            };
-            context.scale(scale, scale);
-            context.set_source_pixbuf(&pix, 0f64, 0f64);
-            context.paint();
-            return Inhibit(false);
-        });
-        */
-    }
-
     // The initial model.
     fn model() -> Model {
         Model {
@@ -428,6 +420,7 @@ impl Win {
             } else if let Some(point) = self.model.photos[cluster[0]].location {
                 if let Some(loc) = search(point.y(), point.x()) {
                     model.set(&top, &[0], &[&format!("{}, {}", loc.1.name, loc.1.country)]);
+                    self.map.emit(MarkLocation(point.y(), point.x()));
                 }
             }
             for photo in cluster {
