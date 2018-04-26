@@ -19,12 +19,11 @@ extern crate walkdir;
 extern crate osmgpsmap;
 
 use cogset::{BruteScan, Dbscan};
-use gdk::prelude::ContextExt;
 use gdk_pixbuf::PixbufExt;
 use gtk::Orientation::{Horizontal, Vertical};
 use gtk::{AboutDialogExt, BoxExt, CellLayoutExt, ContainerExt, DialogExt, FileChooserDialog,
           FileChooserExt, FileFilterExt, GtkWindowExt, Inhibit, LabelExt, Menu, MenuBar, MenuItem,
-          MenuItemExt, MenuShellExt, OrientableExt, PackType, ScrolledWindowExt, TreeStoreExt,
+          MenuItemExt, MenuShellExt, OrientableExt, ScrolledWindowExt, TreeStoreExt,
           TreeStoreExtManual, TreeView, TreeViewColumnExt, TreeViewExt, Viewport, WidgetExt};
 use location_history::{Locations, LocationsExt};
 use relm::{Relm, Update, Widget};
@@ -35,7 +34,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 use walkdir::WalkDir;
-use osmgpsmap::Map;
+use osmgpsmap::{Map, MapExt, MapOsd};
 
 mod photo;
 
@@ -205,6 +204,8 @@ impl Widget for MyMap {
     fn view(_relm: &Relm<Self>, _model: Self::Model) -> Self {
         let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         let map = Map::new();
+        let osd = MapOsd::new();
+        map.layer_add(&osd);
         hbox.pack_start(&map, true, true, 0);
         hbox.show_all();
         MyMap { hbox, map }
