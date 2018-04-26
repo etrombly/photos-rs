@@ -16,6 +16,7 @@ extern crate relm_derive;
 extern crate rexiv2;
 extern crate rgeo;
 extern crate walkdir;
+extern crate osmgpsmap;
 
 use cogset::{BruteScan, Dbscan};
 use gdk::prelude::ContextExt;
@@ -34,6 +35,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 use walkdir::WalkDir;
+use osmgpsmap::Map;
 
 mod photo;
 
@@ -177,6 +179,38 @@ impl Widget for MyViewPort {
     }
 }
 
+impl Update for MyMap {
+    type Model = ();
+    type ModelParam = ();
+    type Msg = ();
+
+    fn model(_: &Relm<Self>, _: ()) {}
+
+    fn update(&mut self, _event: ()) {}
+}
+
+#[derive(Clone)]
+struct MyMap {
+    hbox: gtk::Box,
+    map: Map,
+}
+
+impl Widget for MyMap {
+    type Root = gtk::Box;
+
+    fn root(&self) -> Self::Root {
+        self.hbox.clone()
+    }
+
+    fn view(_relm: &Relm<Self>, _model: Self::Model) -> Self {
+        let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        let map = Map::new();
+        hbox.pack_start(&map, true, true, 0);
+        hbox.show_all();
+        MyMap { hbox, map }
+    }
+}
+
 //#[derive(Clone)]
 pub struct Model {
     locations: Locations,
@@ -194,15 +228,7 @@ pub enum Msg {
 #[widget]
 impl Widget for Win {
     fn init_view(&mut self) {
-        self.root_box
-            .set_child_packing(&self.main_box, true, true, 0, PackType::Start);
-        self.main_box
-            .set_child_packing(&self.map, true, true, 0, PackType::Start);
-        self.main_box
-            .set_child_packing(&self.scroll_box, false, true, 0, PackType::End);
-        self.scroll_box
-            .set_child_packing(&self.scroll_window, true, true, 0, PackType::Start);
-
+        /*
         self.map.connect_draw(move |widget, context| {
             let width = widget.get_allocated_width() as f64;
             let height = widget.get_allocated_height() as f64;
@@ -219,6 +245,7 @@ impl Widget for Win {
             context.paint();
             return Inhibit(false);
         });
+        */
     }
 
     // The initial model.
@@ -269,7 +296,9 @@ impl Widget for Win {
                 gtk::Box {
                     orientation: Horizontal,
                     #[name="map"]
-                    gtk::DrawingArea {},
+                    MyMap {
+                        property_expand: true,
+                    },
                     #[name="scroll_box"]
                     gtk::Box {
                         orientation: Vertical,
@@ -280,7 +309,10 @@ impl Widget for Win {
                         gtk::ScrolledWindow {
                             property_hscrollbar_policy: gtk::PolicyType::Never,
                             #[name="view"]
-                            MyViewPort,
+                            MyViewPort {
+                                vexpand: true,
+                                property_width_request: 300,
+                            },
                         },
                     },
                 },
