@@ -13,10 +13,10 @@ extern crate relm;
 extern crate relm_attributes;
 #[macro_use]
 extern crate relm_derive;
+extern crate osmgpsmap;
 extern crate rexiv2;
 extern crate rgeo;
 extern crate walkdir;
-extern crate osmgpsmap;
 
 use cogset::{BruteScan, Dbscan};
 use gdk_pixbuf::{Pixbuf, PixbufExt};
@@ -26,6 +26,7 @@ use gtk::{AboutDialogExt, BoxExt, CellLayoutExt, ContainerExt, DialogExt, FileCh
           MenuItemExt, MenuShellExt, OrientableExt, ScrolledWindowExt, TreeStoreExt,
           TreeStoreExtManual, TreeView, TreeViewColumnExt, TreeViewExt, Viewport, WidgetExt};
 use location_history::{Locations, LocationsExt};
+use osmgpsmap::{Map, MapExt, MapOsd, MapImage};
 use relm::{Relm, Update, Widget};
 use relm_attributes::widget;
 use rexiv2::Metadata;
@@ -34,14 +35,13 @@ use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 use walkdir::WalkDir;
-use osmgpsmap::{Map, MapExt, MapOsd};
 
 mod photo;
 
+use self::MapMsg::*;
 use self::MenuMsg::*;
 use self::Msg::*;
 use self::ViewMsg::*;
-use self::MapMsg::*;
 use photo::{Photo, TimePhoto};
 
 // The messages that can be sent to the update function.
@@ -182,31 +182,50 @@ impl Widget for MyViewPort {
 #[derive(Msg)]
 pub enum MapMsg {
     MarkLocation(f64, f64),
+    ClearTags,
+}
+
+#[derive(Clone)]
+pub struct MapModel {
+    tags: Vec<MapImage>,
+}
+
+#[derive(Clone)]
+struct MyMap {
+    model: MapModel,
+    hbox: gtk::Box,
+    map: Map,
 }
 
 impl Update for MyMap {
-    type Model = ();
+    type Model = MapModel;
     type ModelParam = ();
     type Msg = MapMsg;
 
-    fn model(_: &Relm<Self>, _: ()) {}
+    fn model(_: &Relm<Self>, _: ()) -> MapModel {
+        MapModel {
+            tags: Vec::new(),
+        }
+    }
 
     fn update(&mut self, event: MapMsg) {
         match event {
             MarkLocation(lat, long) => {
                 // TODO: check if this can just be loaded once and reused
-                let pointer = gdk_pixbuf::Pixbuf::new_from_file("src/resources/pointer.svg").unwrap();
+                let pointer =
+                    gdk_pixbuf::Pixbuf::new_from_file("src/resources/pointer.svg").unwrap();
                 // TODO: add these to a vector or something to track them
-                self.map.image_add(lat as f32, long as f32, &pointer);
+                if let Some(image) = self.map.image_add(lat as f32, long as f32, &pointer) {
+                    self.model.tags.push(image);
+                }
+            }
+            ClearTags => {
+                while let Some(tag) = self.model.tags.pop() {
+                    self.map.image_remove(&tag);
+                }
             }
         }
     }
-}
-
-#[derive(Clone)]
-struct MyMap {
-    hbox: gtk::Box,
-    map: Map,
 }
 
 impl Widget for MyMap {
@@ -216,14 +235,14 @@ impl Widget for MyMap {
         self.hbox.clone()
     }
 
-    fn view(_relm: &Relm<Self>, _model: Self::Model) -> Self {
+    fn view(_relm: &Relm<Self>, model: Self::Model) -> Self {
         let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         let map = Map::new();
         let osd = MapOsd::new();
         map.layer_add(&osd);
         hbox.pack_start(&map, true, true, 0);
         hbox.show_all();
-        MyMap { hbox, map }
+        MyMap { hbox, map, model }
     }
 }
 
@@ -277,7 +296,6 @@ impl Widget for Win {
         #[name="root"]
         gtk::Window {
             title: "Photos-rs",
-            #[name="root_box"]
             gtk::Box {
                 // Set the orientation property of the Box.
                 orientation: Vertical,
@@ -287,20 +305,17 @@ impl Widget for Win {
                     MenuAbout => AboutDialog,
                     MenuQuit => Quit,
                 },
-                #[name="main_box"]
                 gtk::Box {
                     orientation: Horizontal,
                     #[name="map"]
                     MyMap {
                         property_expand: true,
                     },
-                    #[name="scroll_box"]
                     gtk::Box {
                         orientation: Vertical,
                         gtk::Label {
                             text: "Clusters",
                         },
-                        #[name="scroll_window"]
                         gtk::ScrolledWindow {
                             property_hscrollbar_policy: gtk::PolicyType::Never,
                             #[name="view"]
@@ -404,6 +419,7 @@ impl Win {
     }
 
     fn cluster_location(&self) -> gtk::TreeStore {
+        self.map.emit(ClearTags);
         let scanner = BruteScan::new(&self.model.photos);
         let mut dbscan = Dbscan::new(scanner, 1000.0, 3);
         let clusters = dbscan.by_ref().collect::<Vec<_>>();
