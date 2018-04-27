@@ -17,13 +17,16 @@ relm-attributes = "0.14.4"
 relm-derive = "0.14.4"
 rexiv2 = "0.6.0"
 walkdir = "2.1.4"
-rgeo = "^0.1"
-location_history = "^0.1"
+rgeo = "^0.2"
+location_history = "^0.2"
 osmgpsmap = "^0.2"
 
 [dependencies.chrono]
 features = ["serde"]
 version = "0.4.2"
+
+[features]
+default = ["relm/unstable", "relm-attributes/unstable", "relm-derive/unstable"]
 
 [profile.release]
 lto = true

@@ -181,7 +181,7 @@ impl Widget for MyViewPort {
 
 #[derive(Msg)]
 pub enum MapMsg {
-    MarkLocation(f64, f64),
+    MarkLocation(f32, f32),
     ClearTags,
 }
 
@@ -213,9 +213,9 @@ impl Update for MyMap {
             MarkLocation(lat, long) => {
                 // TODO: check if this can just be loaded once and reused
                 let pointer =
-                    gdk_pixbuf::Pixbuf::new_from_file("src/resources/pointer.svg").unwrap();
+                    gdk_pixbuf::Pixbuf::new_from_file_at_size("src/resources/pointer.svg", 80, 80).unwrap();
                 // TODO: add these to a vector or something to track them
-                if let Some(image) = self.map.image_add(lat as f32, long as f32, &pointer) {
+                if let Some(image) = self.map.image_add(lat, long, &pointer) {
                     self.model.tags.push(image);
                 }
             }

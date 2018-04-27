@@ -11,7 +11,7 @@ use std::path::PathBuf;
 pub struct Photo {
     pub path: PathBuf,
     pub location_name: Option<String>,
-    pub location: Option<Point<f64>>,
+    pub location: Option<Point<f32>>,
     pub time: Option<NaiveDateTime>,
 }
 
@@ -45,9 +45,9 @@ impl Photo {
         }
     }
 
-    fn gps_to_point(gps: Option<rexiv2::GpsInfo>) -> Option<Point<f64>> {
+    fn gps_to_point(gps: Option<rexiv2::GpsInfo>) -> Option<Point<f32>> {
         match gps {
-            Some(x) => Some(Point::new(x.longitude, x.latitude)),
+            Some(x) => Some(Point::new(x.longitude as f32, x.latitude as f32)),
             None => None,
         }
     }
@@ -62,7 +62,7 @@ impl cogset::Point for Photo {
         // returning MAX isn't really correct, but shouldn't throw off the clustering
         match self.location {
             Some(x) => match other.location {
-                Some(y) => x.haversine_distance(&y),
+                Some(y) => x.haversine_distance(&y) as f64,
                 None => ::std::f64::MAX,
             },
             None => ::std::f64::MAX,
