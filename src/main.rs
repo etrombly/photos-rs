@@ -46,7 +46,7 @@ use photo::{Photo, TimePhoto};
 
 // The messages that can be sent to the update function.
 #[derive(Msg)]
-enum MenuMsg {
+pub enum MenuMsg {
     SelectFile,
     SelectFolder,
     MenuAbout,
@@ -54,7 +54,7 @@ enum MenuMsg {
 }
 
 #[derive(Clone)]
-struct MyMenuBar {
+pub struct MyMenuBar {
     bar: MenuBar,
 }
 
@@ -111,7 +111,7 @@ impl Widget for MyMenuBar {
 }
 
 #[derive(Clone)]
-struct MyViewPort {
+pub struct MyViewPort {
     view: Viewport,
     tree: TreeView,
 }
@@ -191,7 +191,7 @@ pub struct MapModel {
 }
 
 #[derive(Clone)]
-struct MyMap {
+pub struct MyMap {
     model: MapModel,
     hbox: gtk::Box,
     map: Map,
