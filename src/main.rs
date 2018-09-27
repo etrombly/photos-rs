@@ -1,4 +1,4 @@
-#![feature(proc_macro, unboxed_closures)]
+#![feature(unboxed_closures)]
 #![windows_subsystem = "windows"]
 
 extern crate chrono;
@@ -19,14 +19,15 @@ extern crate rgeo;
 extern crate walkdir;
 
 use cogset::{BruteScan, Dbscan};
-use gdk_pixbuf::{Pixbuf, PixbufExt};
 use gtk::Orientation::{Horizontal, Vertical};
-use gtk::{AboutDialogExt, BoxExt, CellLayoutExt, ContainerExt, DialogExt, FileChooserDialog,
-          FileChooserExt, FileFilterExt, GtkWindowExt, Inhibit, LabelExt, Menu, MenuBar, MenuItem,
-          MenuItemExt, MenuShellExt, OrientableExt, ScrolledWindowExt, TreeStoreExt,
-          TreeStoreExtManual, TreeView, TreeViewColumnExt, TreeViewExt, Viewport, WidgetExt};
+use gtk::{
+    AboutDialogExt, BoxExt, CellLayoutExt, ContainerExt, DialogExt, FileChooserDialog,
+    FileChooserExt, FileFilterExt, GtkWindowExt, Inhibit, LabelExt, Menu, MenuBar, MenuItem,
+    MenuItemExt, MenuShellExt, OrientableExt, ScrolledWindowExt, TreeStoreExt, TreeStoreExtManual,
+    TreeView, TreeViewColumnExt, TreeViewExt, Viewport, WidgetExt,
+};
 use location_history::{Locations, LocationsExt};
-use osmgpsmap::{Map, MapExt, MapOsd, MapImage};
+use osmgpsmap::{Map, MapExt, MapImage, MapOsd};
 use relm::{Relm, Update, Widget};
 use relm_attributes::widget;
 use rexiv2::Metadata;
@@ -203,9 +204,7 @@ impl Update for MyMap {
     type Msg = MapMsg;
 
     fn model(_: &Relm<Self>, _: ()) -> MapModel {
-        MapModel {
-            tags: Vec::new(),
-        }
+        MapModel { tags: Vec::new() }
     }
 
     fn update(&mut self, event: MapMsg) {
@@ -213,7 +212,8 @@ impl Update for MyMap {
             MarkLocation(lat, long) => {
                 // TODO: check if this can just be loaded once and reused
                 let pointer =
-                    gdk_pixbuf::Pixbuf::new_from_file_at_size("src/resources/pointer.svg", 80, 80).unwrap();
+                    gdk_pixbuf::Pixbuf::new_from_file_at_size("src/resources/pointer.svg", 80, 80)
+                        .unwrap();
                 // TODO: add these to a vector or something to track them
                 if let Some(image) = self.map.image_add(lat, long, &pointer) {
                     self.model.tags.push(image);
@@ -454,7 +454,8 @@ impl Win {
     }
 
     fn cluster_time(&self) {
-        let timephotos = self.model
+        let timephotos = self
+            .model
             .photos
             .iter()
             .map(|x| TimePhoto(x))
