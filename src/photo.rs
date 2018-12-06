@@ -1,6 +1,3 @@
-extern crate cogset;
-extern crate rexiv2;
-
 use chrono::NaiveDateTime;
 use geo::algorithm::haversine_distance::HaversineDistance;
 use geo::Point;

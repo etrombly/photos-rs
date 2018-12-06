@@ -1,22 +1,10 @@
 #![feature(unboxed_closures)]
 #![windows_subsystem = "windows"]
 
-extern crate chrono;
-extern crate cogset;
-extern crate gdk;
-extern crate gdk_pixbuf;
-extern crate geo;
-extern crate gtk;
-extern crate location_history;
 #[macro_use]
 extern crate relm;
-extern crate relm_attributes;
 #[macro_use]
 extern crate relm_derive;
-extern crate osmgpsmap;
-extern crate rexiv2;
-extern crate rgeo;
-extern crate walkdir;
 
 use cogset::{BruteScan, Dbscan};
 use gtk::Orientation::{Horizontal, Vertical};
@@ -43,7 +31,7 @@ use self::MapMsg::*;
 use self::MenuMsg::*;
 use self::Msg::*;
 use self::ViewMsg::*;
-use photo::{Photo, TimePhoto};
+use crate::photo::{Photo, TimePhoto};
 
 // The messages that can be sent to the update function.
 #[derive(Msg)]
@@ -356,6 +344,7 @@ impl Win {
     }
 
     fn folder_dialog(&self) -> Option<PathBuf> {
+        let mut path = None;
         let dialog = FileChooserDialog::new::<gtk::Window>(
             Some("Import File"),
             Some(&self.root()),
@@ -365,12 +354,10 @@ impl Win {
         dialog.add_button("Cancel", gtk::ResponseType::Cancel.into());
         let response_ok: i32 = gtk::ResponseType::Ok.into();
         if dialog.run() == response_ok {
-            let path = dialog.get_filename();
-            dialog.destroy();
-            return path;
+            path = dialog.get_filename();
         }
         dialog.destroy();
-        None
+        path
     }
 
     fn about_dialog(&self) {
@@ -380,7 +367,7 @@ impl Win {
         dialog.set_authors(&["Eric Trombly"]);
         dialog.set_program_name("Photos-rs");
         dialog.set_comments("Photo tagger");
-        if let Ok(logo) = gdk_pixbuf::Pixbuf::new_from_file("Antu_map-globe.ico") {
+        if let Ok(logo) = gdk_pixbuf::Pixbuf::new_from_file("resources/Antu_map-globe.ico") {
             dialog.set_logo(Some(&logo));
         };
         dialog.run();
