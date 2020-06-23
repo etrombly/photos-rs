@@ -6,26 +6,27 @@ edition = "2018"
 
 [dependencies]
 cogset = "0.2.0"
-gdk = "0.9.0"
-gdk-pixbuf = "0.5.0"
-geo = "0.11.0"
-gtk = "0.5.0"
-gtk-sys = "0.7.0"
-relm = "0.15.0"
-relm-attributes = "0.15.0"
-relm-derive = "0.15.0"
-rexiv2 = "0.7.0"
-walkdir = "2.2.7"
-rgeo = "0.2.2"
-location_history = "0.2.1"
-osmgpsmap = "0.2.2"
+gdk = "0.12.1"
+gdk-pixbuf = "0.8.0"
+geo = "0.14.0"
+gtk = "0.8.1"
+gtk-sys = "0.9.2"
+relm = "0.19.0"
+relm-attributes = "0.16.0"
+relm-derive = "0.19.1"
+rexiv2 = "0.9.0"
+walkdir = "2.3.1"
+rgeo = "0.2.3"
+location_history = "0.2.2"
+osmgpsmap = "0.2.14"
+glib = "0.9.3"
 
 [dependencies.chrono]
 features = ["serde"]
-version = "0.4.6"
+version = "0.4.11"
 
-[features]
-default = ["relm/unstable", "relm-attributes/unstable", "relm-derive/unstable"]
+#[features]
+#default = ["relm/unstable", "relm-attributes/unstable", "relm-derive/unstable"]
 
 [profile.release]
 lto = true

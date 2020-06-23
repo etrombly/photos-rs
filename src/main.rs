@@ -3,34 +3,27 @@
 
 #[macro_use]
 extern crate relm;
-#[macro_use]
-extern crate relm_derive;
 
 use cogset::{BruteScan, Dbscan};
-use gtk::Orientation::{Horizontal, Vertical};
+use glib::types::Type;
 use gtk::{
-    AboutDialogExt, BoxExt, CellLayoutExt, ContainerExt, DialogExt, FileChooserDialog,
-    FileChooserExt, FileFilterExt, GtkWindowExt, Inhibit, LabelExt, Menu, MenuBar, MenuItem,
-    MenuItemExt, MenuShellExt, OrientableExt, ScrolledWindowExt, TreeStoreExt, TreeStoreExtManual,
-    TreeView, TreeViewColumnExt, TreeViewExt, Viewport, WidgetExt,
+    prelude::*,
+    FileChooserDialog, Inhibit, Menu, MenuBar, MenuItem,
+    Orientation::{Horizontal, Vertical},
+    TreeView, Viewport,
 };
 use location_history::{Locations, LocationsExt};
 use osmgpsmap::{Map, MapExt, MapImage, MapOsd};
 use relm::{Relm, Update, Widget};
-use relm_attributes::widget;
+use relm_derive::{widget, Msg};
 use rexiv2::Metadata;
 use rgeo::search;
-use std::fs::File;
-use std::io::Read;
-use std::path::PathBuf;
+use std::{fs::File, io::Read, path::PathBuf};
 use walkdir::WalkDir;
 
 mod photo;
 
-use self::MapMsg::*;
-use self::MenuMsg::*;
-use self::Msg::*;
-use self::ViewMsg::*;
+use self::{MapMsg::*, MenuMsg::*, Msg::*, ViewMsg::*};
 use crate::photo::{Photo, TimePhoto};
 
 // The messages that can be sent to the update function.
@@ -89,7 +82,7 @@ impl Widget for MyMenuBar {
         file.set_submenu(Some(&menu_file));
 
         menu_help.append(&about);
-        help.set_submenu(&menu_help);
+        help.set_submenu(Some(&menu_help));
 
         menu_bar.append(&file);
         menu_bar.append(&help);
@@ -120,7 +113,7 @@ impl Update for MyViewPort {
     fn update(&mut self, event: ViewMsg) {
         match event {
             UpdateView(model) => {
-                self.tree.set_model(&model);
+                self.tree.set_model(Some(&model));
             }
         }
     }
@@ -135,7 +128,10 @@ impl Widget for MyViewPort {
 
     fn view(_relm: &Relm<Self>, _model: Self::Model) -> Self {
         // TODO: change column names and labels
-        let view = Viewport::new(None, None);
+        let view = Viewport::new(
+            Some(&gtk::Adjustment::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)),
+            Some(&gtk::Adjustment::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)),
+        );
         let tree = TreeView::new();
         let name_column = gtk::TreeViewColumn::new();
         let name_column_cell = gtk::CellRendererText::new();
@@ -328,13 +324,12 @@ impl Win {
             gtk::FileChooserAction::Open,
         );
         let filter = gtk::FileFilter::new();
-        filter.set_name("json");
+        filter.set_name(Some("json"));
         filter.add_pattern("*.json");
         dialog.add_filter(&filter);
-        dialog.add_button("Ok", gtk::ResponseType::Ok.into());
-        dialog.add_button("Cancel", gtk::ResponseType::Cancel.into());
-        let response_ok: i32 = gtk::ResponseType::Ok.into();
-        if dialog.run() == response_ok {
+        dialog.add_button("Ok", gtk::ResponseType::Ok);
+        dialog.add_button("Cancel", gtk::ResponseType::Cancel);
+        if dialog.run() == gtk::ResponseType::Ok {
             let path = dialog.get_filename();
             dialog.destroy();
             return path;
@@ -350,10 +345,9 @@ impl Win {
             Some(&self.root()),
             gtk::FileChooserAction::SelectFolder,
         );
-        dialog.add_button("Ok", gtk::ResponseType::Ok.into());
-        dialog.add_button("Cancel", gtk::ResponseType::Cancel.into());
-        let response_ok: i32 = gtk::ResponseType::Ok.into();
-        if dialog.run() == response_ok {
+        dialog.add_button("Ok", gtk::ResponseType::Ok);
+        dialog.add_button("Cancel", gtk::ResponseType::Cancel);
+        if dialog.run() == gtk::ResponseType::Ok {
             path = dialog.get_filename();
         }
         dialog.destroy();
@@ -362,11 +356,11 @@ impl Win {
 
     fn about_dialog(&self) {
         let dialog = gtk::AboutDialog::new();
-        dialog.set_transient_for(&self.root());
+        dialog.set_transient_for(Some(&self.root()));
         dialog.set_modal(true);
         dialog.set_authors(&["Eric Trombly"]);
         dialog.set_program_name("Photos-rs");
-        dialog.set_comments("Photo tagger");
+        dialog.set_comments(Some("Photo tagger"));
         if let Ok(logo) = gdk_pixbuf::Pixbuf::new_from_file("resources/Antu_map-globe.ico") {
             dialog.set_logo(Some(&logo));
         };
@@ -410,7 +404,7 @@ impl Win {
         let scanner = BruteScan::new(&self.model.photos);
         let mut dbscan = Dbscan::new(scanner, 1000.0, 3);
         let clusters = dbscan.by_ref().collect::<Vec<_>>();
-        let model = gtk::TreeStore::new(&[gtk::Type::String, gtk::Type::String, gtk::Type::String]);
+        let model = gtk::TreeStore::new(&[Type::String, Type::String, Type::String]);
         for cluster in clusters {
             let top = model.append(None);
             if let Some(x) = cluster
@@ -429,7 +423,7 @@ impl Win {
                 }
             }
             for photo in cluster {
-                let entries = model.append(&top);
+                let entries = model.append(Some(&top));
                 model.set(
                     &entries,
                     &[0],

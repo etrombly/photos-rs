@@ -1,6 +1,5 @@
 use chrono::NaiveDateTime;
-use geo::algorithm::haversine_distance::HaversineDistance;
-use geo::Point;
+use geo::{algorithm::haversine_distance::HaversineDistance, Point};
 use location_history::Location;
 use rexiv2::Metadata;
 use std::path::PathBuf;
