@@ -63,13 +63,13 @@ impl Widget for MyMenuBar {
         let menu_help = Menu::new();
         let menu_bar = MenuBar::new();
 
-        let file = MenuItem::new_with_label("File");
-        let quit = MenuItem::new_with_label("Quit");
-        let folder_item = MenuItem::new_with_label("Import photos");
-        let file_item = MenuItem::new_with_label("Import LocationHistory");
+        let file = MenuItem::with_label("File");
+        let quit = MenuItem::with_label("Quit");
+        let folder_item = MenuItem::with_label("Import photos");
+        let file_item = MenuItem::with_label("Import LocationHistory");
 
-        let help = MenuItem::new_with_label("Help");
-        let about = MenuItem::new_with_label("About");
+        let help = MenuItem::with_label("Help");
+        let about = MenuItem::with_label("About");
 
         connect!(relm, quit, connect_activate(_), MenuQuit);
         connect!(relm, folder_item, connect_activate(_), SelectFolder);
@@ -196,7 +196,7 @@ impl Update for MyMap {
             MarkLocation(lat, long) => {
                 // TODO: check if this can just be loaded once and reused
                 let pointer =
-                    gdk_pixbuf::Pixbuf::new_from_file_at_size("src/resources/pointer.svg", 80, 80)
+                    gdk_pixbuf::Pixbuf::from_file_at_size("src/resources/pointer.svg", 80, 80)
                         .unwrap();
                 // TODO: add these to a vector or something to track them
                 if let Some(image) = self.map.image_add(lat, long, &pointer) {
@@ -331,10 +331,10 @@ impl Win {
         dialog.add_button("Cancel", gtk::ResponseType::Cancel);
         if dialog.run() == gtk::ResponseType::Ok {
             let path = dialog.get_filename();
-            dialog.destroy();
+            unsafe { dialog.destroy() };
             return path;
         }
-        dialog.destroy();
+        unsafe { dialog.destroy() };
         None
     }
 
@@ -350,7 +350,7 @@ impl Win {
         if dialog.run() == gtk::ResponseType::Ok {
             path = dialog.get_filename();
         }
-        dialog.destroy();
+        unsafe { dialog.destroy() };
         path
     }
 
@@ -361,11 +361,11 @@ impl Win {
         dialog.set_authors(&["Eric Trombly"]);
         dialog.set_program_name("Photos-rs");
         dialog.set_comments(Some("Photo tagger"));
-        if let Ok(logo) = gdk_pixbuf::Pixbuf::new_from_file("resources/Antu_map-globe.ico") {
+        if let Ok(logo) = gdk_pixbuf::Pixbuf::from_file("resources/Antu_map-globe.ico") {
             dialog.set_logo(Some(&logo));
         };
         dialog.run();
-        dialog.destroy();
+        unsafe { dialog.destroy() };
     }
 
     fn load_json(&self, path: PathBuf) -> Locations {
